@@ -26,7 +26,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tupl
 
 import pandas as pd
 
-from . import cache, config, health, net, schema, validate
+from . import cache, config, health, net, policy, schema, validate
 from .symbols import Instrument, resolve
 
 
@@ -144,6 +144,10 @@ def _skip_reason(src: Source, dtype: str) -> Optional[str]:
     from ..loader import is_installed
     from ..registry import CATALOG
 
+    blocked = policy.skip_reason(src.key)
+    if blocked:
+        return blocked
+
     for lib in src.libs:
         if not is_installed(lib):
             extra = next((l.extra for l in CATALOG if l.key == lib), "")
@@ -233,6 +237,7 @@ def run_sources(p: Pipeline, req: Req, only=None, exclude=(), timeout: float = 6
 
     def attempt(src: Source) -> Optional[pd.DataFrame]:
         state["tried"] += 1
+        policy.notice_once(src.key)
         t0 = time.monotonic()
         try:
             raw = _call(src.fn, req, timeout)

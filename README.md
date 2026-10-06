@@ -149,6 +149,48 @@ TradingView shows MCX only to logged-in users. A free TradingView account works:
 Other helpers: `fs.resolve("500325")` (one company's NSE / BSE / ISIN / Yahoo / TradingView names),
 `fs.search_symbols("tata")`, `fs.cache_info()`, `fs.clear_cache("india_daily_prices", "TCS")`.
 
+## Terms and responsible use
+
+finstack only fetches data that is publicly visible, but **some of the websites behind it do not allow
+automated data collection in their terms of use**. finstack reads them slowly and politely (one shared
+speed limit per website, back-off when a site pushes back, a cache so nothing is downloaded twice, no
+proxies or fake identities). That lowers the chance of being blocked; it does not make the access
+permitted.
+
+| Sources | Website | What its terms say | Status |
+|---|---|---|---|
+| nse, jugaad-data, nselib, nsepython, aynse, nsefin, nsetools, indian-stock-market | NSE | Terms of use, clause 9: "any systematic or automated data collection activities (including scraping...)" are prohibited; clause 8: no copying, aggregating or redistributing without written permission | restricted |
+| bse, bsedata, bseindia | BSE | Assume the same as NSE | restricted |
+| tvDatafeed, tvkit | TradingView | Data is "licensed for exclusive display-only use"; non-display use is prohibited; accounts can be banned | restricted |
+| yfinance, yahooquery | Yahoo Finance | Personal use only | restricted |
+| Bharat-sm-data, openscreener | Moneycontrol, Tickertape, Screener | Website pages, not an API | restricted |
+| mcxlib, gnews, trendspy, finvizfinance, cryptocmd, akshare, efinance | MCX, Google, Finviz, CoinMarketCap, Eastmoney | Website pages, not an API | restricted |
+| Broker SDKs, Tiingo, Polygon, Twelve Data, Alpha Vantage, EODHD, Finnhub, FRED API | your own account / key | Official APIs | permitted |
+| SEC EDGAR | sec.gov | Automated access allowed, max 10 requests/second, with your name and email (`EDGAR_IDENTITY`) | permitted |
+| AMFI, mfapi.in, FRED, World Bank, ECB, Eurostat, DBnomics, US Treasury, Frankfurter | public publishers | Open data / public files and APIs | permitted |
+| CoinGecko, Binance, exchanges via ccxt, GDELT, RSS feeds | public APIs | Allowed within their rate limits | permitted |
+
+`fs.terms()` prints this list for every source.
+
+**What this means for you**
+
+* Use data from restricted sources for **personal research and learning only**. Do not redistribute it
+  or build a commercial product on it: NSE/BSE data for commercial use needs an exchange licence or a
+  licensed vendor.
+* A restricted website can block your IP address, usually for minutes to hours, if it sees automated
+  traffic. If you log in to TradingView through finstack, use a spare account: TradingView can ban accounts.
+* The first time finstack uses a restricted source it prints a one-time notice. Hide it with
+  `FINSTACK_ACCEPT_TERMS=1` once you have read it.
+* To use **only sources whose terms allow programmatic access**:
+
+  ```python
+  fs.configure(policy="permitted")      # back to everything: fs.configure(policy="all")
+  ```
+
+  In this mode Indian stock prices, results and NSE/BSE data need a broker account (Upstox, Zerodha,
+  Dhan, Angel One, Fyers); mutual funds, macro, forex, crypto, US filings and news still work for free.
+  Set it permanently in `~/.finstack/config.toml` with `policy = "permitted"` under `[keys]`.
+
 ## Which source to use: data types and rankings
 
 finstack covers 24 types of data. Every library is ranked best to worst within each type it serves

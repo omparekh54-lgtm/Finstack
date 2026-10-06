@@ -35,6 +35,7 @@ from .core import cache as _cache
 from .core import health as _health
 from .core import net as governor
 from .core.config import configure
+from .core.policy import terms
 from .core.router import NoData, bulk, fetch, pipelines, route
 from .core.symbols import isin_valid, resolve
 from .core.symbols import search as search_symbols
@@ -69,7 +70,7 @@ __version__ = "0.7.0"
 __all__ = [
     # pipelines
     "fetch", "bulk", "route", "pipelines", "resolve", "search_symbols", "isin_valid", "configure",
-    "governor", "health", "net_stats", "cache_info", "clear_cache", "NoData",
+    "governor", "health", "net_stats", "cache_info", "clear_cache", "NoData", "terms",
     # discovery
     "get", "catalog", "doctor", "is_installed", "lookup", "CATALOG", "CATEGORIES", "check",
     "data_types", "sources",

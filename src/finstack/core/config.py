@@ -69,7 +69,10 @@ def budget_override(group: str) -> Optional[float]:
 def configure(**settings: Any) -> None:
     """Set credentials or settings in code, e.g. fs.configure(FRED_API_KEY="...", FINSTACK_HOME="/data/fs").
     budgets={"nse": 2.0} overrides a website's requests per second.
+    policy="permitted" uses only sources whose terms allow programmatic access (default "all").
     """
+    if "policy" in settings and str(settings["policy"]).lower() not in ("all", "permitted"):
+        raise ValueError("policy must be 'all' or 'permitted'")
     budgets = settings.pop("budgets", None) or {}
     for k, v in budgets.items():
         _OVERRIDES[f"budget:{k}"] = v
