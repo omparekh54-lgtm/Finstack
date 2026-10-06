@@ -4,3 +4,5 @@ __pycache__/
 *.egg-info/
 live_test_report.csv
 finstack_report.*
+build/
+dist/

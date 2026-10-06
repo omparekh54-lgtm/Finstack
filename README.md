@@ -5,9 +5,12 @@ One import for **free financial data**, with a focus on Indian markets. 95 data 
 ## Install
 
 ```bash
-pip install -e ".[all]"        # every data source that needs no account, key or browser
-pip install -e ".[company]"    # just company results, statements and reports (India + US)
+pip install "finstack[all]"        # every data source that needs no account, key or browser
+pip install "finstack[company]"    # just company results, statements and reports (India + US)
+pip install finstack               # just the core; add extras later, e.g. pip install "finstack[india]"
 ```
+
+From a copy of the source code, use `pip install -e ".[all]"` instead.
 
 | Extra | Data |
 |---|---|
