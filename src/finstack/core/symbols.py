@@ -139,17 +139,38 @@ _mlock = threading.Lock()
 NSE_EQUITY_LIST = "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"
 
 
-def _nse_list() -> pd.DataFrame:
-    import requests
+def _nse_csv_text() -> str:
+    errors = []
+    try:                                    # the nse library's session has the cookies NSE expects
+        from ..india import nse_client
 
-    r = requests.get(NSE_EQUITY_LIST, timeout=30,
-                     headers={"User-Agent": "Mozilla/5.0 (finstack; +https://pypi.org/project/finstack)"})
-    r.raise_for_status()
-    df = pd.read_csv(io.StringIO(r.text))
+        return nse_client()._transport.request(NSE_EQUITY_LIST).text
+    except Exception as e:  # noqa: BLE001
+        errors.append(f"nse: {e}")
+    try:
+        import requests
+
+        r = requests.get(NSE_EQUITY_LIST, timeout=30, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/126.0 Safari/537.36", "Referer": "https://www.nseindia.com/"})
+        r.raise_for_status()
+        return r.text
+    except Exception as e:  # noqa: BLE001
+        errors.append(f"direct: {e}")
+    raise RuntimeError("; ".join(errors))
+
+
+def _nse_list() -> pd.DataFrame:
+    try:
+        df = pd.read_csv(io.StringIO(_nse_csv_text()))
+    except Exception:  # noqa: BLE001 - nselib reads the same file its own way
+        from ..loader import get
+
+        df = get("nselib", "capital_market").equity_list()
     df.columns = [c.strip().upper() for c in df.columns]
     return pd.DataFrame({"symbol": df["SYMBOL"].str.strip(), "name": df["NAME OF COMPANY"].str.strip(),
                          "series": df.get("SERIES", pd.Series(dtype=str)).astype(str).str.strip(),
-                         "isin": df["ISIN NUMBER"].str.strip(),
+                         "isin": df.get("ISIN NUMBER", pd.Series(index=df.index, dtype=str)).astype(str).str.strip(),
                          "face_value": pd.to_numeric(df.get("FACE VALUE"), errors="coerce")})
 
 
@@ -199,6 +220,8 @@ def master(refresh: bool = False) -> pd.DataFrame:
         for c in ("symbol", "bse_code"):
             if c not in df:
                 df[c] = None
+        if "bse_symbol" in df:       # NSE list missing or company BSE-only: BSE's short code is usually the same
+            df["symbol"] = df["symbol"].fillna(df["bse_symbol"])
         df["isin_valid"] = df["isin"].map(isin_valid)
         df.attrs["errors"] = errors
         _master = df.reset_index(drop=True)

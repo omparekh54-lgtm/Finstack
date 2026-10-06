@@ -63,6 +63,27 @@ class FakeNSE:
         return path
 
 
+class _Resp:
+    def __init__(self, data):
+        self._data = data
+
+    def json(self):
+        return self._data
+
+
+class _Transport:
+    def request(self, url, params=None):
+        assert url.endswith("/fiidiiTradeReact")
+        return _Resp([{"category": "FII/FPI", "date": "06-Oct-2026", "buyValue": "12000.5",
+                       "sellValue": "11000.25", "netValue": "1000.25"},
+                      {"category": "DII", "date": "06-Oct-2026", "buyValue": "9000", "sellValue": "9500",
+                       "netValue": "-500"}])
+
+
+FakeNSE.base_url = "https://www.nseindia.com/api"
+FakeNSE._transport = _Transport()
+
+
 class FakeBSE:
     def resultsSnapshot(self, code):
         return load("bse_resultsSnapshot.json")
@@ -149,3 +170,13 @@ def test_forex_offline_from_bundled_ecb_file():
     pytest.importorskip("currency_converter")
     df = fs.fetch("forex", "USD/INR", start="2024-01-02", end="2024-01-05", sources=["currency_converter"])
     assert 80 < df["rate"].mean() < 86 and df["pair"].eq("USD/INR").all()
+
+
+def test_fii_dii_from_nse_endpoint(fake):
+    df = fs.fetch("india_market_breadth", what="fii_dii", sources=["builtin:nse_fiidii"])
+    assert list(df["category"]) == ["FII/FPI", "DII"] and df.attrs["source"] == "builtin:nse_fiidii"
+
+
+def test_intraday_never_asks_indian_stock_market_for_stocks():
+    assert "indian_stock_market" not in fs.route("india_intraday", "INFY")["source"].tolist()
+    assert "indian_stock_market" in fs.route("india_intraday", "NIFTY")["source"].tolist()

@@ -73,6 +73,9 @@ morningstar = ["mstarpy; python_version >= '3.11'"]          # needs Chrome + Se
 openbb = ["openbb"]                            # large
 xbrl-bulk = ["india-xbrl-filings"]             # personal/educational use only (its terms)
 
+# ======================= DEVELOPMENT =======================
+test = ["pytest"]
+
 # ======================= BUNDLES =======================
 # Quarterly results, annual reports, statements for Indian + US companies
 company = ["finstack[india,india-fundamentals,global,filings]"]

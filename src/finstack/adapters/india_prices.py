@@ -64,12 +64,6 @@ def _d_nsefin(req: Req):
         req.inst.nse, req.start.strftime("%d-%m-%Y"), req.end.strftime("%d-%m-%Y"))
 
 
-def _d_ism(req: Req):
-    return get("indian_stock_market").NSE().get_ohlc_data(req.inst.nse, timeframe="1Day", is_index=False,
-                                                          start_date=dtm(req.start),
-                                                          end_date=dtm(req.end + dt.timedelta(days=1)))
-
-
 def _d_yahoo(req: Req):
     need(req.inst.yahoo, "no Yahoo ticker")
     return yf_history(req.inst.yahoo, req.start, req.end)
@@ -203,7 +197,6 @@ DAILY_SOURCES = [
     Source("yfinance", _d_yahoo, YAHOO_HOSTS, when=_equity),
     Source("tvdatafeed", _d_tv, TV_HOSTS, when=_equity),
     Source("nsefin", _d_nsefin, NSE_HOSTS, when=_has_nse),
-    Source("indian_stock_market", _d_ism, ("charting.nseindia.com",), when=_has_nse),
     Source("yahooquery", _d_yq, YAHOO_HOSTS, when=_equity),
 ]
 
@@ -550,7 +543,9 @@ register(Pipeline(
         Source("smartapi", _i_angel, B.ANGEL_HOSTS),
         Source("dhanhq", _i_dhan, B.DHAN_HOSTS),
         Source("kiteconnect", _i_kite, B.KITE_HOSTS, when=_equity),
-        Source("indian_stock_market", _i_ism, ("charting.nseindia.com",), when=lambda r: bool(r.inst.nse)),
+        # indices only: for a stock symbol it does not recognise, indian_stock_market silently
+        # returns NIFTY 50 candles instead (seen live with INFY), which would be wrong data
+        Source("indian_stock_market", _i_ism, ("charting.nseindia.com",), when=_index),
         Source("tvdatafeed", _i_tv, TV_HOSTS, when=lambda r: bool(r.inst.tv)),
         Source("yfinance", _i_yahoo, YAHOO_HOSTS, when=lambda r: bool(r.inst.yahoo)),
     ],
@@ -733,6 +728,14 @@ def _b_nsefin(req):
     raise LookupError(f"nsefin has no '{w}'")
 
 
+def _b_nse_fiidii(req):
+    """NSE's own FII/DII endpoint through the nse library's cookie-handling session."""
+    n = nse()
+    data = n._transport.request(f"{n.base_url}/fiidiiTradeReact").json()
+    need(data, "NSE returned no FII/DII data")
+    return pd.DataFrame(data)
+
+
 def _b_nselib(req):
     if _what(req) == "fii_dii":
         return get("nselib", "capital_market.capital_market_data").fii_dii_trading_activity()
@@ -743,6 +746,8 @@ register(Pipeline(
     "india_market_breadth", "Indian market breadth and flows: advance/decline, gainers, losers, FII/DII, pre-open",
     "snapshot", [
         Source("nse", _b_nse, NSE_HOSTS, when=lambda r: _what(r) in ("advance_decline", "gainers", "losers")),
+        Source("builtin:nse_fiidii", _b_nse_fiidii, NSE_HOSTS, libs=("nse",), score=4.7,
+               when=lambda r: _what(r) == "fii_dii"),
         Source("nsepython", _b_nsepython, NSE_HOSTS, when=lambda r: _what(r) in ("fii_dii", "pre_open")),
         Source("nsefin", _b_nsefin, NSE_HOSTS, when=lambda r: _what(r) in ("fii_dii", "pre_open")),
         Source("nselib", _b_nselib, NSE_HOSTS, when=lambda r: _what(r) == "fii_dii", score=3.5),
