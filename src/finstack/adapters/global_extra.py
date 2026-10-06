@@ -88,12 +88,14 @@ register(Pipeline(
 
 
 # =====================================================================================================
-# Phase 3: ownership, insiders, dividends, ESG, company news (India + global)
+# Phase 3: ownership, insiders, dividends, company news (India + global)
+# (ESG was dropped: Yahoo stopped serving ESG scores and no other free source exists)
 # =====================================================================================================
 import datetime as dt  # noqa: E402
 import re  # noqa: E402
 
 from ._common import NSE_HOSTS, env, nse, to_records  # noqa: E402
+from .news import _PUBLISHER_HOSTS  # noqa: E402
 
 SEC_HOSTS = ("data.sec.gov", "www.sec.gov")
 
@@ -136,11 +138,25 @@ def _i_nse(req):
     n = nse()
     end = req.end or dt.date.today()
     start = req.start or end - dt.timedelta(days=365)
-    params = {"index": "equities", "symbol": nse_symbol(req), "from_date": start.strftime("%d-%m-%Y"),
+    sym = nse_symbol(req)
+    url = f"{n.base_url}/corporates-pit"
+    params = {"index": "equities", "symbol": sym, "from_date": start.strftime("%d-%m-%Y"),
               "to_date": end.strftime("%d-%m-%Y")}
-    data = n._transport.request(f"{n.base_url}/corporates-pit", params=params).json()
-    rows = to_records(data)
-    return pd.DataFrame(rows)
+    rows = _pit_rows(n._transport.request(url, params=params).json())
+    if not rows:     # some date windows come back blank; NSE's own default window is the second opinion
+        rows = _pit_rows(n._transport.request(url, params={"index": "equities", "symbol": sym}).json())
+    need(rows, f"NSE lists no insider-trading disclosures for {sym} between {start} and {end} "
+               f"(normal for companies whose insiders rarely trade)")
+    df = pd.DataFrame(rows)
+    if "symbol" in df:
+        df = df[df["symbol"].astype(str).str.upper() == sym]
+    return df
+
+
+def _pit_rows(data) -> list:
+    if isinstance(data, dict) and isinstance(data.get("data"), list):
+        return data["data"]
+    return to_records(data)
 
 
 _NSE_PIT = {"acqName": "insider", "personCategory": "category", "secType": "security", "secAcq": "quantity",
@@ -256,38 +272,106 @@ register(Pipeline(
     example='fs.fetch("dividends", "ITC")'))
 
 
-# =============================================================== ESG
-def _esg_yahoo(req):
-    s = get("yfinance").Ticker(yahoo_ticker(req)).sustainability
-    need(isinstance(s, pd.DataFrame) and len(s), "Yahoo has no ESG data for this company")
-    return s.reset_index().rename(columns={"index": "metric"})
-
-
-register(Pipeline(
-    "esg", "ESG (environmental, social, governance) risk scores - large companies only", "snapshot",
-    [Source("yfinance", _esg_yahoo, YAHOO_HOSTS)],
-    market="raw", normalize=False, ttl=7 * 86400, post=lambda df, r: _tag(df, r), status="beta", columns=(),
-    params_doc="symbol, market='US' for US tickers", example='fs.fetch("esg", "AAPL", market="US")'))
-
-
 # =============================================================== company news
-def _n_yahoo(req):
-    items = get("yfinance").Ticker(yahoo_ticker(req)).news or []
+def _yahoo_news_rows(items) -> list:
     rows = []
-    for it in items:
-        c = it.get("content", it)
+    for it in items or []:
+        c = it.get("content", it) if isinstance(it, dict) else {}
         url = (c.get("canonicalUrl") or {}).get("url") if isinstance(c.get("canonicalUrl"), dict) else c.get("link")
         rows.append({"published": c.get("pubDate") or c.get("providerPublishTime"), "title": c.get("title"),
                      "link": url, "publisher": (c.get("provider") or {}).get("displayName")
                      if isinstance(c.get("provider"), dict) else c.get("publisher"),
                      "summary": c.get("summary")})
+    return rows
+
+
+def company_words(req) -> list:
+    """Words a headline about this company would contain: the short company name and the symbol."""
+    words = []
+    q = req.p("query")
+    if q:
+        return [str(q)]
+    if indian(req):
+        try:
+            from ..core.symbols import resolve
+
+            name = resolve(nse_symbol(req)).name or ""
+        except Exception:  # noqa: BLE001 - symbol master unavailable: fall back to the symbol
+            name = ""
+        name = re.sub(r"\b(limited|ltd\.?|india|corporation|company|co\.?|the)\b", " ", name, flags=re.I)
+        name = re.sub(r"[^A-Za-z0-9&' ]+", " ", name)
+        name = " ".join(name.split()[:3])
+        if len(name) >= 3:
+            words.append(name)
+    words.append(nse_symbol(req) if indian(req) else str(req.symbol).upper())
+    return words
+
+
+def _n_yahoo(req):
+    t = get("yfinance").Ticker(yahoo_ticker(req))
+    n = int(req.p("n", 30))
+    getter = getattr(t, "get_news", None)
+    try:
+        items = getter(count=n, tab="all") if getter else t.news
+    except TypeError:                     # older yfinance without count= / tab=
+        items = t.news
+    return pd.DataFrame(_yahoo_news_rows(items))
+
+
+def _n_yahoo_search(req):
+    """Yahoo's search box: finds stories by company name (better for Indian stocks than the ticker feed)."""
+    yf = get("yfinance")
+    rows = []
+    for w in company_words(req)[:1]:
+        try:
+            found = yf.Search(w, max_results=1, news_count=int(req.p("n", 30)), timeout=20)
+        except TypeError:                 # older yfinance without timeout=
+            found = yf.Search(w, max_results=1, news_count=int(req.p("n", 30)))
+        rows += _yahoo_news_rows(found.news)
     return pd.DataFrame(rows)
 
 
+def _google_rss_url(req, words) -> str:
+    from urllib.parse import quote_plus
+
+    q = " OR ".join(f'"{w}"' for w in words)
+    if indian(req):
+        return f"https://news.google.com/rss/search?q={quote_plus(q + ' when:7d')}&hl=en-IN&gl=IN&ceid=IN:en"
+    return f"https://news.google.com/rss/search?q={quote_plus(q + ' when:7d')}&hl=en-US&gl=US&ceid=US:en"
+
+
+def _n_google_rss(req):
+    """Google News search feed read directly (with a real timeout, unlike the gnews package)."""
+    import feedparser
+    import requests
+
+    r = requests.get(_google_rss_url(req, company_words(req)), timeout=15,
+                     headers={"User-Agent": "Mozilla/5.0 finstack"})
+    r.raise_for_status()
+    rows = []
+    for e in feedparser.parse(r.content).entries[: int(req.p("n", 30))]:
+        src = e.get("source")
+        rows.append({"published": e.get("published"), "title": e.get("title"), "link": e.get("link"),
+                     "publisher": src.get("title") if isinstance(src, dict) else None,
+                     "summary": None})
+    return pd.DataFrame(rows)
+
+
+def _n_publisher_rss(req):
+    """Indian (or US) publishers' RSS feeds, keeping headlines that mention the company."""
+    from ..api import news
+
+    feeds = ("business_standard", "economic_times", "moneycontrol", "livemint") if indian(req) else (
+        "marketwatch", "cnbc", "wsj")
+    frames = [news(sources=feeds, query=w) for w in company_words(req)]
+    df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    return df.rename(columns={"source": "publisher"})
+
+
 def _n_gnews(req):
-    q = req.p("query") or nse_symbol(req)
+    q = company_words(req)[0]
     items = get("gnews").GNews(language="en", country="IN" if indian(req) else "US", period=req.p("period", "7d"),
-                               max_results=int(req.p("n", 30))).get_news(f"{q} share")
+                               max_results=int(req.p("n", 30))).get_news(q)
     return pd.DataFrame([{"published": i.get("published date"), "title": i.get("title"), "link": i.get("url"),
                           "publisher": (i.get("publisher") or {}).get("title"), "summary": i.get("description")}
                          for i in items])
@@ -305,9 +389,12 @@ def _post_news(df, req):
 register(Pipeline(
     "company_news", "Latest headlines about one company", "snapshot", [
         Source("yfinance", _n_yahoo, YAHOO_HOSTS, score=4.0),
-        Source("gnews", _n_gnews, ("news.google.com",), score=3.5),
+        Source("yfinance:search", _n_yahoo_search, YAHOO_HOSTS, libs=("yfinance",), score=3.9),
+        Source("builtin:google_news_rss", _n_google_rss, ("news.google.com",), libs=("feedparser",), score=3.8),
+        Source("feedparser", _n_publisher_rss, _PUBLISHER_HOSTS, score=3.6),
+        Source("gnews", _n_gnews, ("news.google.com",), score=3.0),
     ],
     market="raw", normalize=False, ttl=1800, post=_post_news, status="beta",
     columns=("published", "title", "publisher", "link", "summary"),
-    params_doc="symbol, market='US' for US tickers, query= (override the search words for Google News)",
+    params_doc="symbol, market='US' for US tickers, n=30, query= (override the search words; default = company name)",
     example='fs.fetch("company_news", "INFY")'))

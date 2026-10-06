@@ -320,6 +320,62 @@ def test_india_insider_trades_from_nse(monkeypatch):
     assert (r["insider"], r["transaction"], r["quantity"], r["value"]) == ("Some Director", "Buy", 1000, 3850000)
 
 
+def test_india_insider_falls_back_to_nse_default_window_and_explains_empty(monkeypatch):
+    from finstack.adapters import global_extra
+
+    calls = []
+
+    class T:
+        def __init__(self, answers):
+            self.answers = answers
+
+        def request(self, url, params=None):
+            calls.append(dict(params))
+            body = self.answers.pop(0)
+            return types.SimpleNamespace(json=lambda: body)
+
+    row = {"symbol": "INFY", "acqName": "A KMP", "secAcq": "10", "tdpTransactionType": "Sell"}
+    t = T([{"data": [], "acqNameList": []}, {"data": [row, dict(row, symbol="OTHER")]}])
+    monkeypatch.setattr(global_extra, "nse", lambda: types.SimpleNamespace(base_url="https://x/api", _transport=t))
+    df = fs.fetch("insider_trades", "INFY", sources=["builtin:nse_insider"])
+    assert len(df) == 1 and df.iloc[0]["insider"] == "A KMP"
+    assert "from_date" in calls[0] and "from_date" not in calls[1]
+
+    t2 = T([{"data": []}, {"data": []}])
+    monkeypatch.setattr(global_extra, "nse", lambda: types.SimpleNamespace(base_url="https://x/api", _transport=t2))
+    with pytest.raises(fs.NoData) as e:
+        fs.fetch("insider_trades", "TCS", sources=["builtin:nse_insider"], refresh=True)
+    assert "no insider-trading disclosures" in str(e.value)
+
+
+def test_company_news_search_words_use_the_short_company_name(monkeypatch):
+    from finstack.adapters import global_extra
+    from finstack.core import symbols
+
+    monkeypatch.setattr(symbols, "resolve", lambda s, market=None: types.SimpleNamespace(name="Infosys Limited"))
+    req = types.SimpleNamespace(symbol="INFY", p=lambda k, d=None: {"market": "IN"}.get(k, d))
+    assert global_extra.company_words(req) == ["Infosys", "INFY"]
+    req_us = types.SimpleNamespace(symbol="AAPL", p=lambda k, d=None: {"market": "US"}.get(k, d))
+    assert global_extra.company_words(req_us) == ["AAPL"]
+    assert "gl=IN" in global_extra._google_rss_url(req, ["Infosys"])
+
+
+def test_company_news_from_google_rss_when_yahoo_is_empty(monkeypatch):
+    import requests
+    from finstack.adapters import global_extra
+    from finstack.core import symbols
+
+    rss = b"""<?xml version="1.0"?><rss><channel><item><title>Infosys bags order - Mint</title>
+    <link>https://news.google.com/x</link><pubDate>Mon, 05 Oct 2026 10:00:00 GMT</pubDate>
+    <source url="https://livemint.com">Mint</source></item></channel></rss>"""
+    monkeypatch.setattr(symbols, "resolve", lambda s, market=None: types.SimpleNamespace(name="Infosys Limited"))
+    monkeypatch.setattr(requests, "get", lambda url, **kw: types.SimpleNamespace(
+        content=rss, raise_for_status=lambda: None))
+    pytest.importorskip("feedparser")
+    df = fs.fetch("company_news", "INFY", sources=["builtin:google_news_rss"])
+    assert df.iloc[0]["title"].startswith("Infosys bags order") and df.iloc[0]["publisher"] == "Mint"
+
+
 def test_dividends_keep_exchange_dates_and_nse_amounts(monkeypatch):
     from finstack.adapters import global_extra
 

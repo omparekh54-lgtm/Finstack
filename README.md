@@ -109,14 +109,15 @@ fs.fetch("india_scorecard", "TCS")                            # Tickertape score
 
 fs.fetch("india_segments", "RELIANCE")                        # segment revenue/results from the XBRL filing
 fs.fetch("india_instruments", what="etf")                     # also "sme", "sgb" (gold bonds), "circulars"
-fs.fetch("insider_trades", "TCS", start="1y")                 # NSE insider-trading disclosures
+fs.fetch("insider_trades", "INFY", start="1y")                # NSE insider-trading disclosures
 fs.fetch("insider_trades", "AAPL", market="US")               # SEC Form 4 / Yahoo
 fs.fetch("holders", "AAPL", market="US")                      # institutional holders (what="mutual_fund", "major")
 fs.fetch("us_fund_holdings", "1067983")                       # a US fund's 13F holdings (needs EDGAR_IDENTITY)
 fs.fetch("dividends", "ITC")                                  # dividend history (what="splits" for splits)
-fs.fetch("company_news", "INFY")                              # headlines about one company
-fs.fetch("esg", "AAPL", market="US")                          # ESG risk scores (large companies)
+fs.fetch("company_news", "INFY")                              # headlines about one company (Yahoo, Google News, publisher RSS)
 ```
+
+ESG scores are not offered: Yahoo stopped publishing them and no other free source has them.
 
 `fs.fetch("news", ...)` now keeps the publisher's name in a `publisher` column (the per-row `source`
 column says which library answered, as everywhere else).
