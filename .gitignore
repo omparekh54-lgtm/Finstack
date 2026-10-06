@@ -1,0 +1,6 @@
+.venv/
+.pytest_tmp/
+__pycache__/
+*.egg-info/
+live_test_report.csv
+finstack_report.*

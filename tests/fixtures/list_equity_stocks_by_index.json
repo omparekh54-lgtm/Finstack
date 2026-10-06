@@ -1,0 +1,41 @@
+{
+  "data": [
+    {
+      "change": 31.1,
+      "chart30Path": "",
+      "chart365Path": "",
+      "date30dAgo": "24-Apr-2026",
+      "date365dAgo": "26-May-2025",
+      "dayHigh": 23983.2,
+      "dayLow": 23868.5,
+      "ffmc": null,
+      "identifier": "NIFTY 50",
+      "lastPrice": 23944.8,
+      "lastUpdateTime": "2026-05-27 11:54:23",
+      "marketType": null,
+      "nearWKH": 9.207832193287125,
+      "nearWKL": -7.944307575098445,
+      "open": 23880.35,
+      "pChange": 0.13,
+      "perChange30d": -0.61,
+      "perChange365d": -3.55,
+      "previousClose": 23913.7,
+      "priority": 1,
+      "series": null,
+      "stockIndClosePrice": 0,
+      "symbol": "NIFTY 50",
+      "totalTradedValue": 148216660193.65,
+      "totalTradedVolume": 235733128,
+      "yearHigh": 26373.2,
+      "yearLow": 22182.55,
+      "chart30dPath": "https://nsearchives.nseindia.com/30d/NIFTY-50.svg",
+      "chart365dPath": "https://nsearchives.nseindia.com/365d/NIFTY-50.svg"
+    }
+  ],
+  "marketStatus": {
+    "market": "CM",
+    "marketStatus": "Open",
+    "marketStatusMessage": "Normal Market is Open"
+  },
+  "timestamp": "27-May-2026 11:54:31"
+}

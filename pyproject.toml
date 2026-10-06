@@ -1,0 +1,90 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "finstack"
+version = "0.7.0"
+description = "One import for free financial DATA: Indian markets (NSE, BSE, MCX, F&O, IPOs, quarterly results, annual reports, Screener, Moneycontrol, Tickertape, mutual funds), global stocks, 10+ other countries, macro from IMF/ECB/OECD/World Bank, crypto, forex, filings and news."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["pandas", "requests", "pyarrow"]   # pyarrow: Parquet cache
+
+[project.optional-dependencies]
+# ======================= INDIA =======================
+india = [
+  "nse", "nsepython", "jugaad-data", "nselib", "nsefin", "aynse", "nsetools",
+  "indian-stock-market", "indiaopt", "bse", "bsedata", "bseindia", "BharatFinTrack",
+]
+# Company results & statements: Moneycontrol, Tickertape, Screener.in, Sensibull
+india-fundamentals = ["Bharat-sm-data"]
+commodities = ["mcxlib"]                       # MCX India
+mf = ["mftool", "fundkit; python_version >= '3.12'"]
+brokers = [                                    # need your trading account
+  "kiteconnect", "smartapi-python", "logzero", "pyotp", "upstox-python-sdk", "dhanhq", "breeze-connect",
+]
+# Fyers' SDK pins the obsolete PyPI "asyncio" package, which shadows Python's asyncio. Use a separate venv.
+fyers = ["fyers-apiv3"]
+screener = ["openscreener"]                    # + python -m playwright install chromium
+
+# ======================= GLOBAL MARKETS =======================
+global = [
+  "yfinance>=1.5", "yahooquery", "yahoofinancials", "pandas-datareader",
+  "finance-datareader", "tessa", "financedatabase",
+]
+tradingview = ["tradingview-datafeed", "tvkit; python_version >= '3.11'"]
+world = [                                      # China, Korea, Taiwan, Russia
+  "akshare; python_version >= '3.11'", "efinance", "baostock",
+  "pykrx>=1.2", "twstock", "apimoex", "moexalgo; python_version >= '3.12'",
+]
+brokers-global = ["alpaca-py", "ib_async"]     # need an Alpaca / IBKR account
+
+# ======================= MACRO / FX / CRYPTO =======================
+macro = [
+  "fredapi", "wbgapi", "pandas-datareader", "sdmx1", "ecbdata", "eurostat",
+  "dbnomics; python_version >= '3.11'", "imf-reader; python_version >= '3.12'",
+]
+forex = ["forex-python", "currencyconverter"]
+crypto = ["pycoingecko", "ccxt", "python-binance", "cryptocmd", "defillama2"]
+
+# ======================= FILINGS / NEWS / ALT DATA =======================
+filings = ["edgartools", "sec-edgar-downloader"]
+news = ["feedparser", "finvizfinance", "gnews", "GoogleNews", "gdeltdoc",
+        "moneycontrol-api; python_version >= '3.11'"]
+alt-data = ["trendspy"]
+ipo = ["pyipo"]
+
+# ======================= FREE-KEY APIS (bring your own free key) =======================
+keyed = [
+  "alpha_vantage", "finnhub-python", "twelvedata", "tiingo",
+  "nasdaq-data-link", "financetoolkit", "stocksymbol", "eodhd", "fmpsdk", "simfin",
+  "openfigipy", "tradingeconomics", "newsapi-python", "praw", "sec-api",
+  "beaapi", "EIAOpenData", "datagovindia", "tushare", "jquants-api-client",
+  "dune-client; python_version >= '3.11'",
+]
+
+# ======================= SEPARATE (conflicts or extra setup) =======================
+polygon = ["polygon-api-client"]               # pins certifi; conflicts with ccxt
+stockdex = ["stockdex"]                        # pins old curl_cffi -> downgrades yfinance
+defeatbeta = ["defeatbeta-api; python_version >= '3.11'"]   # needs pandas>=3 (pykrx needs pandas<3)
+secfsdstools = ["secfsdstools"]                # needs numpy<2
+morningstar = ["mstarpy; python_version >= '3.11'"]          # needs Chrome + Selenium
+openbb = ["openbb"]                            # large
+xbrl-bulk = ["india-xbrl-filings"]             # personal/educational use only (its terms)
+
+# ======================= BUNDLES =======================
+# Quarterly results, annual reports, statements for Indian + US companies
+company = ["finstack[india,india-fundamentals,global,filings]"]
+# Every data source that needs no account, key or browser
+all = [
+  "finstack[india,india-fundamentals,commodities,mf,global,tradingview,world,macro,forex,crypto,filings,news,alt-data,ipo]",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# keep pytest's scratch folders inside the project (avoids Windows "Access is denied" on the user Temp folder)
+addopts = "--basetemp=.pytest_tmp"
