@@ -135,6 +135,17 @@ TESTS = [
      at_least(1)),
     ("extra", "Earnings surprises", "analyst_estimates", "AAPL", dict(what="earnings_history", market="US"),
      at_least(1)),
+    ("extra", "Price bands", "india_price_bands", None, dict(start="7d"), all_of(has("symbol", "band"), at_least(1000))),
+    ("extra", "F&O lot sizes", "india_fno_reference", None, dict(what="lots"), at_least(50)),
+    ("extra", "Futures expiries", "india_fno_reference", "NIFTY", dict(what="expiries"), at_least(1)),
+    ("extra", "F&O contract history", "FNO", "NIFTY", dict(start="20d"), all_of(has("oi", "settle"), at_least(5))),
+    ("extra", "Volume gainers", "india_market_breadth", None, dict(what="volume_gainers"), at_least(1)),
+    ("extra", "Most active", "india_market_breadth", None, dict(what="most_active"), at_least(1)),
+    ("extra", "Margins (VaR/ELM)", "india_margins", "TCS", dict(start="7d"), at_least(1)),
+    ("extra", "Company profile (India)", "company_profile", "TCS", {}, has("name")),
+    ("extra", "Company profile (US)", "company_profile", "AAPL", dict(market="US"), has("name", "sector")),
+    ("extra", "Peers", "india_peers", "TCS", {}, at_least(2)),
+    ("extra", "Tickertape scorecard", "india_scorecard", "TCS", {}, at_least(1)),
     # ---------------- Global
     ("global", "US quote", "global_live_quotes", "AAPL", {}, between("last", 10, 10000)),
     ("global", "US daily prices", "global_daily_prices", "AAPL", dict(start="30d"), at_least(15)),
@@ -159,12 +170,15 @@ for grp, label, dtype, sym, kw, check in TESTS:
     t0 = time.time()
     err, df = None, None
     try:
-        if dtype == "BULK":
+        if dtype == "FNO":         # history of the nearest NIFTY futures contract
+            exp = fs.fetch("india_fno_reference", "NIFTY", what="expiries")["expiry"].min()
+            df = fs.fetch("india_fno_history", sym, expiry=str(exp.date()), refresh=fresh, timeout=30, **kw)
+        elif dtype == "BULK":
             syms = fs.fetch("india_indices", "NIFTY 50", what="constituents")["symbol"].head(10).tolist()
             df = fs.bulk("india_daily_prices", syms, refresh=fresh, progress=False, **kw)
             if df.attrs.get("failed"):
                 raise RuntimeError(f"failed symbols: {df.attrs['failed']}")
-        else:
+        if dtype not in ("FNO", "BULK"):
             df = fs.fetch(dtype, sym, timeout=30, refresh=fresh, **kw)
         verdict = check(df)
         if verdict is True:

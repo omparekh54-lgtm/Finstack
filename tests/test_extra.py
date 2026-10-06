@@ -186,3 +186,114 @@ def test_analyst_targets_and_symbol_mapping(monkeypatch):
     assert df.iloc[0]["mean"] == 4100.0 and df.iloc[0]["symbol"] == "TCS.NS"
     fs.fetch("analyst_estimates", "AAPL", what="price_targets", market="US", sources=["yfinance"])
     assert seen == ["TCS.NS", "AAPL"]
+
+
+# ================================================================== Phase 2
+class FakeNSE2(FakeNSE):
+    def priceband_report(self, date, folder):
+        self.calls.append(("bands", date.date()))
+        path = f"{folder}/sec_list_{date:%d%m%Y}.csv"
+        pd.DataFrame({"Symbol": ["ADANIENT", "XYZ"], "Series": ["EQ", "BE"], "Security Name": ["Adani", "Xyz"],
+                      "Band": ["No Band", "5"], "Remarks": ["-", "-"]}).to_csv(path, index=False)
+        return path
+
+    def fno_lots(self):
+        return load("fno_lots.json")
+
+    def get_futures_expiry(self, index="nifty"):
+        return ["27-Oct-2026", "24-Nov-2026", "29-Dec-2026"]
+
+    def fetch_historical_fno_data(self, symbol, instrument, from_date, to_date, expiry=None, option_type=None,
+                                  strike_price=None):
+        self.calls.append(("fno", symbol, instrument))
+        base = load("fetch_historical_fno_data.json")[0]
+        return [dict(base, FH_TIMESTAMP=d.strftime("%d-%b-%Y"), FH_SYMBOL=symbol)
+                for d in calendar.trading_days(from_date, to_date)]
+
+    def live_volume_gainers(self):
+        return load("live_volume_gainers.json")
+
+    def equity_meta_info(self, symbol):
+        return load("equity_meta_info.json")
+
+
+@pytest.fixture()
+def fake2(monkeypatch):
+    n = FakeNSE2()
+    monkeypatch.setattr(india_extra, "nse", lambda: n)
+    from finstack.adapters import india_prices
+
+    monkeypatch.setattr(india_prices, "nse", lambda: n)
+    monkeypatch.setattr(calendar, "india_final_through", lambda at=None: dt.date(2026, 10, 5))
+    return n
+
+
+def test_price_bands(fake2):
+    df = fs.fetch("india_price_bands", "XYZ", start="2026-10-01", end="2026-10-01")
+    r = df.iloc[0]
+    assert (r["symbol"], r["band_pct"]) == ("XYZ", 5.0)
+    allb = fs.fetch("india_price_bands", start="2026-10-01", end="2026-10-01")
+    assert len(allb) == 2 and pd.isna(allb.set_index("symbol").loc["ADANIENT", "band_pct"])
+    assert fake2.calls.count(("bands", dt.date(2026, 10, 1))) == 1
+
+
+def test_lot_sizes_and_expiries(fake2):
+    lots = fs.fetch("india_fno_reference", what="lots")
+    assert lots.set_index("symbol").loc["NIFTY", "lot_size"] == 50 and len(lots) > 30
+    one = fs.fetch("india_fno_reference", "AXISBANK", what="lots")
+    assert list(one["lot_size"]) == [625]
+    exp = fs.fetch("india_fno_reference", "NIFTY", what="expiries")
+    assert exp["expiry"].iloc[0] == pd.Timestamp("2026-10-27")
+
+
+def test_fno_contract_history(fake2):
+    df = fs.fetch("india_fno_history", "BANKNIFTY", expiry="2026-02-24", start="2025-12-15", end="2025-12-19",
+                  sources=["nse"])
+    assert len(df) == 5 and {"settle", "oi", "oi_change", "underlying_price"} <= set(df.columns)
+    assert df["oi"].iloc[0] == 45300 and df["symbol"].iloc[0] == "BANKNIFTY"
+    assert ("fno", "BANKNIFTY", "futidx") in fake2.calls
+
+
+def test_volume_gainers_added_without_touching_old_breadth(fake2):
+    df = fs.fetch("india_market_breadth", what="volume_gainers", sources=["nse:volume_gainers"])
+    assert df.iloc[0]["symbol"] == "NEWGEN"
+    labels = [s.label for s in router.PIPELINES["india_market_breadth"].sources]
+    assert labels[:2] == ["nse", "builtin:nse_fiidii"]          # original sources first, unchanged
+
+
+def test_margins_daily_file(monkeypatch):
+    class CM:
+        @staticmethod
+        def var_end_of_day(d):
+            return pd.DataFrame({"Symbol": ["TCS ", "INFY"], "Series": ["EQ", "EQ"], "VaR Margin": ["12.5", "13"],
+                                 "Extreme Loss Rate": [3.5, 3.5], "Applicable Margin Rate": [16.0, 16.5]})
+
+    monkeypatch.setattr(india_extra, "get", lambda key, sub="": CM)
+    monkeypatch.setattr(calendar, "india_final_through", lambda at=None: dt.date(2026, 10, 5))
+    df = fs.fetch("india_margins", "TCS", start="2026-10-01", end="2026-10-01")
+    assert df.iloc[0]["var_margin"] == 12.5 and df.iloc[0]["applicable_margin_rate"] == 16.0
+
+
+def test_company_profile_india_and_global(monkeypatch):
+    class NP:
+        @staticmethod
+        def nse_eq(sym):
+            return {"info": {"companyName": "Tata Consultancy Services Limited", "isin": "INE467B01029"},
+                    "industryInfo": {"macro": "Information Technology", "sector": "Information Technology",
+                                     "industry": "IT - Services", "basicIndustry": "Computers - Software"},
+                    "metadata": {"listingDate": "25-Aug-2004", "pdSectorPe": 30.1, "pdSymbolPe": 28.0}}
+
+    class T:
+        def __init__(self, t):
+            self.info = {"longName": "Apple Inc.", "sector": "Technology", "industry": "Consumer Electronics",
+                         "fullTimeEmployees": 160000}
+
+    def fake_get(key, sub=""):
+        return NP if key == "nsepython" else types.SimpleNamespace(Ticker=T)
+
+    monkeypatch.setattr(india_extra, "get", fake_get)
+    tcs = fs.fetch("company_profile", "TCS", sources=["nsepython"]).iloc[0]
+    assert tcs["basic_industry"] == "Computers - Software" and tcs["isin"] == "INE467B01029"
+    aapl = fs.fetch("company_profile", "AAPL", market="US", sources=["yfinance"]).iloc[0]
+    assert (aapl["symbol"], aapl["employees"]) == ("AAPL", 160000)
+    assert "nsepython" not in fs.route("company_profile", "AAPL", market="US")["source"].tolist()

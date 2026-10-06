@@ -96,6 +96,16 @@ fs.fetch("india_ratios", "TCS")                               # P/E, P/B, ROE, R
 fs.fetch("analyst_estimates", "INFY", what="price_targets")   # also recommendations, earnings_estimate,
                                                               # revenue_estimate, earnings_history
 fs.fetch("analyst_estimates", "AAPL", what="earnings_history", market="US")
+
+fs.fetch("india_price_bands", "ADANIENT")                     # circuit limit (2/5/10/20 %, no band)
+fs.fetch("india_fno_reference", what="lots")                  # F&O lot sizes; what="expiries" for an index
+fs.fetch("india_fno_history", "NIFTY", expiry="2026-10-27", option_type="CE", strike=25000)  # one contract
+fs.fetch("india_market_breadth", what="volume_gainers")       # also what="most_active"
+fs.fetch("india_margins", "TCS")                              # VaR / ELM / applicable margin %
+fs.fetch("company_profile", "TCS")                            # sector, industry, ISIN, listing date ...
+fs.fetch("company_profile", "AAPL", market="US")
+fs.fetch("india_peers", "TCS")                                # peer comparison (Tickertape)
+fs.fetch("india_scorecard", "TCS")                            # Tickertape scorecard
 ```
 
 Request cost: deals and delivery are one request/file for every stock (per day or window) and are kept

@@ -358,3 +358,295 @@ register(Pipeline(
     status=BETA, columns=("period_end", "pe", "pb", "roe", "roce", "operating_margin", "net_margin",
                           "debt_to_equity", "eps", "book_value_per_share", "dividend_yield", "symbol"),
     params_doc="symbol, consolidated=True", example='fs.fetch("india_ratios", "TCS")'))
+
+
+# =====================================================================================================
+# Phase 2: market structure and company details
+# =====================================================================================================
+
+# =============================================================== price bands (circuit limits)
+def _pb_nse(req):
+    os.makedirs(TMP, exist_ok=True)
+    return pd.read_csv(nse().priceband_report(dtm(req.start), TMP))
+
+
+def _post_bands(df, req):
+    df = df.copy()
+    df.columns = [canon(c) for c in df.columns]
+    ren = {}
+    for c in df.columns:
+        if c in ("symbol",):
+            ren[c] = "symbol"
+        elif c in ("series",):
+            ren[c] = "series"
+        elif c in ("security_name", "securityname", "name"):
+            ren[c] = "name"
+        elif c in ("band", "price_band", "priceband", "band_pct"):
+            ren[c] = "band"
+        elif c in ("remarks",):
+            ren[c] = "remarks"
+    df = df.rename(columns=ren)
+    need({"symbol", "band"} <= set(df.columns), f"unexpected columns {list(df.columns)[:10]}")
+    df["symbol"] = df["symbol"].astype(str).str.strip()
+    # band is a % ("2", "5", "10", "20") or "No Band"
+    df["band_pct"] = pd.to_numeric(df["band"].astype(str).str.extract(r"(\d+(?:\.\d+)?)")[0], errors="coerce")
+    return df.assign(date=pd.Timestamp(req.start))
+
+
+register(Pipeline(
+    "india_price_bands", "Price bands / circuit limits for every NSE stock (2%, 5%, 10%, 20%, no band)",
+    "daily_files", [Source("nse", _pb_nse, NSE_ARCHIVE_HOSTS)],
+    market="raw", needs_symbol=False, normalize=False, final=india_final, post=_post_bands, symbol_filter=True,
+    status=BETA, columns=("date", "symbol", "series", "name", "band", "band_pct", "remarks"),
+    params_doc="symbol (optional), start, end - one NSE file per trading day",
+    example='fs.fetch("india_price_bands", "ADANIENT")'))
+
+
+# =============================================================== F&O reference: lot sizes and expiries
+def _fr_nse(req):
+    w = req.p("what", "lots")
+    n = nse()
+    if w == "lots":
+        lots = n.fno_lots()
+        need(lots, "NSE returned no lot sizes")
+        return pd.DataFrame([{"symbol": k, "lot_size": v} for k, v in lots.items()])
+    if w == "expiries":
+        idx = str(req.symbol or "nifty").lower()
+        exps = n.get_futures_expiry(idx)
+        return pd.DataFrame({"symbol": idx.upper(), "expiry": pd.to_datetime(exps, dayfirst=True)})
+    raise LookupError("what must be lots or expiries")
+
+
+def _post_fr(df, req):
+    if req.p("what", "lots") == "lots" and req.symbol:
+        df = df[df["symbol"].astype(str).str.upper() == str(req.symbol).upper()]
+    return df
+
+
+register(Pipeline(
+    "india_fno_reference", "F&O lot sizes for every contract; futures expiry dates for an index", "snapshot",
+    [Source("nse", _fr_nse, NSE_HOSTS)],
+    market="raw", needs_symbol=False, normalize=False, ttl=86400, post=_post_fr, status=BETA, columns=(),
+    params_doc="what=lots (symbol optional) | what=expiries with symbol nifty|banknifty|finnifty",
+    example='fs.fetch("india_fno_reference", what="lots")'))
+
+
+# =============================================================== F&O contract history
+def _fh_args(req):
+    exp = req.p("expiry")
+    need(exp, "expiry='YYYY-MM-DD' is required")
+    ot = req.p("option_type")
+    strike = req.p("strike")
+    is_index = req.inst.kind == "index"
+    inst = ("opt" if ot else "fut") + ("idx" if is_index else "stk")
+    from ..core.symbols import NSE_DERIV_INDEX
+
+    sym = NSE_DERIV_INDEX.get(req.inst.nse, req.inst.nse) if is_index else req.inst.nse
+    return sym, inst, pd.Timestamp(exp).date(), (str(ot).lower() if ot else None), (float(strike) if strike else None)
+
+
+def _fh_nse(req):
+    sym, inst, exp, ot, strike = _fh_args(req)
+    return nse().fetch_historical_fno_data(sym, inst, req.start, req.end, expiry=exp, option_type=ot,
+                                           strike_price=strike)
+
+
+def _fh_aynse(req):
+    sym, inst, exp, ot, strike = _fh_args(req)
+    return get("aynse").derivatives_df(sym, req.start, req.end, exp, inst.upper(), strike_price=strike,
+                                       option_type=(ot.upper() if ot else None))
+
+
+def _post_fh(df, req):
+    keep = [c for c in ("date", "open", "high", "low", "close", "settle", "volume", "value", "oi", "oi_change",
+                        "underlying_price", "expiry", "strike", "option_type") if c in df]
+    return df[keep].assign(symbol=_fh_args(req)[0])
+
+
+register(Pipeline(
+    "india_fno_history", "Daily history of one futures or options contract (price, settle, open interest)",
+    "series", [
+        Source("nse", _fh_nse, NSE_HOSTS),
+        Source("aynse", _fh_aynse, NSE_HOSTS),
+    ],
+    market="IN", check=validate.eod_rows, final=india_final, has_data=india_has_data, post=_post_fh,
+    default_days=90, status=BETA,
+    extra_aliases={"oi": ["fh_open_int", "open_interest"], "oi_change": ["fh_change_in_oi", "change_in_oi"],
+                   "settle": ["fh_settle_price", "settle_price"], "underlying_price": ["fh_underlying_value"],
+                   "expiry": ["fh_expiry_dt"], "strike": ["fh_strike_price"], "option_type": ["fh_option_type"],
+                   "open": ["fh_opening_price"], "high": ["fh_trade_high_price"], "low": ["fh_trade_low_price"],
+                   "close": ["fh_closing_price"], "value": ["fh_tot_traded_val"]},
+    entity=lambda r: "FNO:" + "|".join(str(x) for x in _fh_args(r)),
+    columns=("date", "open", "high", "low", "close", "settle", "volume", "oi", "oi_change", "underlying_price",
+             "expiry", "strike", "option_type", "symbol"),
+    params_doc="symbol (NIFTY, BANKNIFTY or an F&O stock), expiry='YYYY-MM-DD', option_type=CE|PE (omit for "
+               "futures), strike=24500, start, end",
+    example='fs.fetch("india_fno_history", "NIFTY", expiry="2026-10-27", option_type="CE", strike=25000)'))
+
+
+# =============================================================== more market breadth: volume gainers, most active
+def _bx_nse(req):
+    data = nse().live_volume_gainers()
+    return pd.DataFrame(to_records(data))
+
+
+def _bx_nselib(req):
+    cm = get("nselib", "capital_market")
+    if req.p("what") == "most_active":
+        return cm.most_active_equities(req.p("by", "value"))
+    raise LookupError("nselib route: most_active only")
+
+
+if "india_market_breadth" in PIPELINES:          # additive: new `what` values only, old ones untouched
+    PIPELINES["india_market_breadth"].sources += [
+        Source("nse", _bx_nse, NSE_HOSTS, label="nse:volume_gainers",
+               when=lambda r: r.p("what") == "volume_gainers"),
+        Source("nselib", _bx_nselib, NSE_HOSTS, label="nselib:most_active",
+               when=lambda r: r.p("what") == "most_active"),
+    ]
+    PIPELINES["india_market_breadth"].params_doc += "|volume_gainers|most_active (by=value|volume)"
+
+
+# =============================================================== margins (VaR / ELM)
+def _m_nselib(req):
+    cm = get("nselib", "capital_market")
+    return cm.var_end_of_day(req.start.strftime("%d-%m-%Y"))
+
+
+def _post_margins(df, req):
+    df = df.copy()
+    df.columns = [canon(c) for c in df.columns]
+    sym = next((c for c in df.columns if c in ("symbol", "sym")), None)
+    need(sym, f"unexpected columns {list(df.columns)[:10]}")
+    df = df.rename(columns={sym: "symbol"})
+    df["symbol"] = df["symbol"].astype(str).str.strip()
+    for c in df.columns:
+        if c not in ("symbol", "series", "isin", "date", "record_type"):
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+    return df.assign(date=pd.Timestamp(req.start))
+
+
+register(Pipeline(
+    "india_margins", "Margin rates (VaR, ELM, applicable margin %) for every NSE stock, end of day",
+    "daily_files", [Source("nselib", _m_nselib, NSE_ARCHIVE_HOSTS)],
+    market="raw", needs_symbol=False, normalize=False, final=india_final, post=_post_margins, symbol_filter=True,
+    status=BETA, columns=("date", "symbol"),
+    params_doc="symbol (optional), start, end - one NSE file per trading day",
+    example='fs.fetch("india_margins", "TCS")'))
+
+
+# =============================================================== company profile (India + global)
+def _indian(req) -> bool:
+    """NSE symbol unless market= says otherwise or the symbol is a non-Indian Yahoo ticker."""
+    s = str(req.symbol).upper()
+    return str(req.p("market", "IN")).upper() == "IN" and ("." not in s or s.endswith((".NS", ".BO")))
+
+
+def _yahoo_of(req) -> str:
+    from .global_extra import yahoo_ticker
+
+    return yahoo_ticker(req)
+
+
+def _p_nsepython(req):
+    q = get("nsepython").nse_eq(req.inst.nse)
+    info, ind, md = q.get("info", {}), q.get("industryInfo", {}), q.get("metadata", {})
+    return pd.DataFrame([{"symbol": req.inst.nse, "name": info.get("companyName"), "isin": info.get("isin"),
+                          "macro": ind.get("macro"), "sector": ind.get("sector"), "industry": ind.get("industry"),
+                          "basic_industry": ind.get("basicIndustry"), "listing_date": md.get("listingDate"),
+                          "sector_pe": md.get("pdSectorPe"), "symbol_pe": md.get("pdSymbolPe"),
+                          "index": md.get("pdSectorInd"), "fno": info.get("isFNOSec")}])
+
+
+def _p_nse_meta(req):
+    m = nse().equity_meta_info(req.inst.nse)
+    return pd.DataFrame([{"symbol": m.get("symbol"), "name": m.get("companyName"), "isin": m.get("isin"),
+                          "fno": m.get("isFNOSec"), "etf": m.get("isETFSec"), "suspended": m.get("isSuspended"),
+                          "delisted": m.get("isDelisted"), "series": ",".join(m.get("activeSeries") or [])}])
+
+
+_YF_PROFILE = {"longName": "name", "sector": "sector", "industry": "industry", "longBusinessSummary": "description",
+               "fullTimeEmployees": "employees", "website": "website", "city": "city", "country": "country",
+               "marketCap": "market_cap", "currency": "currency", "exchange": "exchange"}
+
+
+def _p_yahoo(req):
+    t = _yahoo_of(req)
+    info = get("yfinance").Ticker(t).info or {}
+    row = {v: info.get(k) for k, v in _YF_PROFILE.items() if info.get(k) is not None}
+    need(row.get("name") or row.get("sector"), "Yahoo returned no profile")
+    return pd.DataFrame([{"symbol": t, **row}])
+
+
+def _p_fd(req):
+    fd = get("financedatabase")
+    t = _yahoo_of(req)
+    eq = fd.Equities().select()
+    need(t in eq.index, f"{t} not in FinanceDatabase")
+    r = eq.loc[[t]].reset_index().iloc[0].to_dict()
+    return pd.DataFrame([{"symbol": t, "name": r.get("name"), "sector": r.get("sector"),
+                          "industry": r.get("industry"), "description": r.get("summary"),
+                          "country": r.get("country"), "website": r.get("website"),
+                          "market_cap": r.get("market_cap"), "currency": r.get("currency")}])
+
+
+register(Pipeline(
+    "company_profile", "Company profile: name, sector, industry, description, employees, website (India + global)",
+    "snapshot", [
+        Source("nsepython", _p_nsepython, NSE_HOSTS, score=4.0, when=_indian),
+        Source("yfinance", _p_yahoo, YAHOO_HOSTS, score=3.8),
+        Source("nse", _p_nse_meta, NSE_HOSTS, score=3.0, when=_indian),
+        Source("financedatabase", _p_fd, ("raw.githubusercontent.com",), score=2.5),
+    ],
+    market="IN", normalize=False, ttl=7 * 86400, status=BETA,
+    columns=("symbol", "name", "sector", "industry", "basic_industry", "description", "employees", "website",
+             "isin", "listing_date", "market_cap"),
+    params_doc="symbol (NSE symbol; for other markets a Yahoo ticker with market='US', or VOD.L, 7203.T)",
+    example='fs.fetch("company_profile", "TCS")'))
+
+
+# =============================================================== peers and Tickertape scorecard
+def _tt_sid(symbol):
+    from Fundamentals import Tickertape
+
+    tt = Tickertape()
+    t, _ = tt.get_ticker(symbol)
+    return tt, (t.get("sid") if isinstance(t, dict) else t)
+
+
+def _peers_tt(req):
+    tt, sid = _tt_sid(req.inst.nse)
+    return tt.peers_comparison(sid, comparison_type=req.p("by", "valuation"))
+
+
+def _peers_screener(req):
+    from Fundamentals import Screener
+
+    from ._common import env
+
+    s = Screener(env("SCREENER_USER"), env("SCREENER_PASS"))
+    return s.get_peers_comparison(f"/company/{req.inst.nse}/consolidated/")
+
+
+register(Pipeline(
+    "india_peers", "Peer comparison: a company next to its competitors (valuation or technical view)", "snapshot", [
+        Source("bharat_sm_data", _peers_tt, ("api.tickertape.in", "www.tickertape.in"), label="tickertape",
+               score=4.0),
+        Source("screener", _peers_screener, ("www.screener.in",), libs=("bharat_sm_data",), score=3.5),
+    ],
+    market="IN", normalize=False, ttl=86400, status=BETA, columns=(),
+    params_doc="symbol, by=valuation|technical (Tickertape)", example='fs.fetch("india_peers", "TCS")'))
+
+
+def _score_tt(req):
+    tt, sid = _tt_sid(req.inst.nse)
+    sc = tt.get_score_card(sid)
+    return sc if isinstance(sc, pd.DataFrame) else pd.DataFrame(to_records(sc) or [sc])
+
+
+register(Pipeline(
+    "india_scorecard", "Tickertape scorecard: performance, valuation, growth, profitability, entry point, red flags",
+    "snapshot", [Source("bharat_sm_data", _score_tt, ("api.tickertape.in", "www.tickertape.in"),
+                        label="tickertape")],
+    market="IN", normalize=False, ttl=86400, status=BETA, columns=(),
+    params_doc="symbol", example='fs.fetch("india_scorecard", "TCS")'))
