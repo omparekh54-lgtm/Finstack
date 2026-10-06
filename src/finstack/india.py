@@ -55,6 +55,14 @@ def tradingview():
     get("tvdatafeed")
     from tvDatafeed import TvDatafeed
 
+    from .core import config
+
+    user, pw = config.get("TRADINGVIEW_USERNAME"), config.get("TRADINGVIEW_PASSWORD")
+    if user and pw:            # a free TradingView account unlocks e.g. MCX, which anonymous sessions can't see
+        try:
+            return TvDatafeed(user, pw)
+        except Exception:  # noqa: BLE001 - fall back to anonymous
+            pass
     return TvDatafeed()
 
 

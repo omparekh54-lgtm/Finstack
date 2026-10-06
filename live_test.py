@@ -59,6 +59,12 @@ def anything(df):
     return True
 
 
+# Tests whose data simply doesn't exist at some times, or needs a (free) login, are reported as
+# [~] instead of [ ] when they fail for that reason.
+ONLY_IN_SESSION = {"Pre-open"}
+NEEDS_LOGIN = {"MCX gold": "MCX blocks scripts and TradingView only serves MCX to logged-in users: set "
+                           "TRADINGVIEW_USERNAME / TRADINGVIEW_PASSWORD (free account) or a broker token"}
+
 # (group, label, data type, symbol, parameters, sanity check)
 TESTS = [
     # ---------------- India: prices and market data
@@ -84,7 +90,7 @@ TESTS = [
     ("india", "Advance / decline", "india_market_breadth", None, dict(what="advance_decline"), at_least(1)),
     ("india", "Top gainers", "india_market_breadth", None, dict(what="gainers"), at_least(3)),
     ("india", "Top losers", "india_market_breadth", None, dict(what="losers"), at_least(3)),
-    ("india", "Pre-open", "india_market_breadth", None, dict(what="pre_open"), at_least(1)),
+    ("india", "Pre-open", "india_market_breadth", None, dict(what="pre_open"), at_least(1)),     # 09:00-15:30 only
     ("india", "52-week high/low", "india_market_breadth", None, dict(what="52w"), at_least(1)),
     ("india", "Bulk: 10 stocks", "BULK", None, dict(start="30d"), all_of(has("symbol"), at_least(150))),
     # ---------------- India: company data
@@ -152,14 +158,24 @@ for grp, label, dtype, sym, kw, check in TESTS:
         status = "FAIL"
         note = " | ".join(f"{s}: {o}" for s, o in getattr(e, "attempts", [])[:5])[:400] or str(e)[:400]
     secs = round(time.time() - t0, 1)
+    if status == "FAIL":
+        from finstack.core import calendar
+
+        if label in ONLY_IN_SESSION and not calendar.in_session():
+            status, note = "LATER", "NSE publishes pre-open data 09:00-09:08 IST and clears it after hours"
+        elif label in NEEDS_LOGIN and not fs.core.config.get("TRADINGVIEW_USERNAME"):
+            status, note = "LOGIN", NEEDS_LOGIN[label]
     n = 0 if df is None else len(df)
     src = "" if df is None else str(df.attrs.get("source", ""))[:40]
     rows.append({"group": grp, "test": label, "type": dtype, "status": status, "rows": n, "source": src,
                  "seconds": secs, "details": note})
-    mark = {"OK": "[x]", "WRONG": "[?]", "FAIL": "[ ]"}[status]
+    mark = {"OK": "[x]", "WRONG": "[?]", "FAIL": "[ ]", "LATER": "[~]", "LOGIN": "[~]"}[status]
     print(f"{mark} {status:5} {label:24} rows={n:<6} {secs:>5}s  {src}")
     if status == "WRONG":
         print(f"        - check failed: {note}")
+    if status in ("LATER", "LOGIN"):
+        print(f"        - {note}")
+        err = None
     for s, o in (getattr(err, "attempts", []) or []):
         print(f"        - {s}: {o[:160]}")
     if err is not None and not getattr(err, "attempts", None):
@@ -168,4 +184,7 @@ for grp, label, dtype, sym, kw, check in TESTS:
 report = pd.DataFrame(rows)
 report.to_csv("live_test_report.csv", index=False)
 ok = int((report.status == "OK").sum())
-print(f"\n{ok}/{len(report)} passed ([x] = data came back and looks right). Details: live_test_report.csv")
+waiting = int(report.status.isin(["LATER", "LOGIN"]).sum())
+print(f"\n{ok}/{len(report) - waiting} passed ([x] = data came back and looks right)"
+      + (f"; {waiting} [~] not available right now or need a free login" if waiting else "")
+      + ". Details: live_test_report.csv")

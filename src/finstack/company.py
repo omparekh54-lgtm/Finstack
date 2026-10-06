@@ -258,9 +258,13 @@ def result_filings(symbol: Optional[str] = None, period: str = "quarterly",
     """
     to_d = _dt.datetime.fromisoformat(end) if end else _dt.datetime.now()
     from_d = _dt.datetime.fromisoformat(start) if start else to_d - _dt.timedelta(days=30)
-    rows = _nse().financial_results(period=period, symbol=_base(symbol) if symbol else None,
-                                    from_date=from_d, to_date=to_d)
-    return _tag(pd.DataFrame(rows), "NSE")
+    sym = _base(symbol) if symbol else None
+    df = pd.DataFrame(_nse().financial_results(period=period, symbol=sym, from_date=from_d, to_date=to_d))
+    if df.empty and sym:     # NSE often returns nothing for symbol + dates: take all filings, then filter
+        alln = pd.DataFrame(_nse().financial_results(period=period, from_date=from_d, to_date=to_d))
+        if "symbol" in alln:
+            df = alln[alln["symbol"].astype(str).str.upper() == sym]
+    return _tag(df.reset_index(drop=True), "NSE")
 
 
 def announcements(symbol: Optional[str] = None, days: int = 30) -> pd.DataFrame:

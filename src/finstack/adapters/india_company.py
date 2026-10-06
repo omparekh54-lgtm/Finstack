@@ -314,6 +314,10 @@ def _e_nse(req):
         df = pd.DataFrame(n.financial_results(period=period, symbol=_sym(req), from_date=a, to_date=b))
         if df.empty and _sym(req):        # with a symbol, NSE often returns nothing for a date window
             df = _since(pd.DataFrame(n.financial_results(period=period, symbol=_sym(req))), a)
+        if df.empty and _sym(req):        # last resort: every company's filings in the window, then filter
+            alln = pd.DataFrame(n.financial_results(period=period, from_date=a, to_date=b))
+            if "symbol" in alln:
+                df = alln[alln["symbol"].astype(str).str.upper() == _sym(req).upper()]
         return df
     if w == "shareholding":
         need(_sym(req), "shareholding needs a symbol")

@@ -742,9 +742,8 @@ def _b_nse_preopen(req):
     n = nse()
     key = str(req.p("index", "NIFTY")).upper().replace("NIFTY 50", "NIFTY").replace("NIFTY BANK", "BANKNIFTY")
     data = n._transport.request(f"{n.base_url}/market-data-pre-open", params={"key": key}).json()
-    rows = [dict(r.get("metadata") or {}) for r in (data.get("data") or [])]
-    need(rows, "NSE returned no pre-open data")
-    return pd.DataFrame(rows)
+    rows = [dict(r.get("metadata") or {}) for r in (data.get("data") or []) if r.get("metadata")]
+    return pd.DataFrame(rows)        # empty outside the pre-open window: NSE clears it after hours
 
 
 def _b_nselib(req):

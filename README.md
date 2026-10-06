@@ -142,6 +142,10 @@ Broker APIs are used first when their credentials are set: Upstox (`UPSTOX_ACCES
 (`ANGEL_API_KEY`, `ANGEL_CLIENT_CODE`, `ANGEL_PIN`, `ANGEL_TOTP_SECRET`), Fyers (`FYERS_CLIENT_ID`,
 `FYERS_ACCESS_TOKEN`). Without them the free website sources are used.
 
+MCX commodity data is the one Indian data type no anonymous free source serves: MCX blocks scripts and
+TradingView shows MCX only to logged-in users. A free TradingView account works: set
+`TRADINGVIEW_USERNAME` and `TRADINGVIEW_PASSWORD`.
+
 Other helpers: `fs.resolve("500325")` (one company's NSE / BSE / ISIN / Yahoo / TradingView names),
 `fs.search_symbols("tata")`, `fs.cache_info()`, `fs.clear_cache("india_daily_prices", "TCS")`.
 
