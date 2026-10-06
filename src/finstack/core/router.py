@@ -230,7 +230,14 @@ def run_sources(p: Pipeline, req: Req, only=None, exclude=(), timeout: float = 6
                 attempts: Optional[list] = None) -> pd.DataFrame:
     attempts = attempts if attempts is not None else []
     empties = tried = 0
-    for src, why in plan(p, req, only, exclude):
+    steps = plan(p, req, only, exclude)
+    if steps and all(why and why.startswith("website") for _, why in steps):
+        # every source is waiting on a briefly paused website: wait (up to 90 s) rather than fail
+        wait = min(max((net.bucket(h).blocked_for() for s, _ in steps for h in s.hosts), default=0), 90)
+        if wait:
+            time.sleep(wait + 1)
+            steps = plan(p, req, only, exclude)
+    for src, why in steps:
         if why:
             attempts.append((src.label, f"skipped - {why}"))
             continue
@@ -558,6 +565,8 @@ def bulk(data_type: str, symbols: Iterable[str], start=None, end=None, *, worker
             parts.append(df)
     res = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
     res.attrs["failed"] = failed
+    if "source" in res:
+        res.attrs["source"] = ", ".join(dict.fromkeys(res["source"].dropna().astype(str)))
     return res
 
 

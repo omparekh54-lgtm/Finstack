@@ -58,6 +58,33 @@ def ohlcv(df: pd.DataFrame, time_col: str = "date", max_move: float = 0.20) -> R
     return good, badrows, notes
 
 
+def eod_rows(df: pd.DataFrame, time_col: str = "date") -> Result:
+    """Exchange end-of-day files (bhavcopy). Contracts that did not trade that day legitimately have
+    open/high/low of 0 and only a close/settle price, so price-range checks apply to traded rows only.
+    Rejected: negative prices, and traded rows whose close lies outside the day's high-low range."""
+    notes: List[str] = []
+    bad = pd.Series(False, index=df.index)
+    for c in ("open", "high", "low", "close", "settle"):
+        if c in df:
+            bad |= df[c] < 0
+    if {"high", "low", "close"} <= set(df.columns):
+        traded = (df["high"] > 0) & (df["low"] > 0)
+        if "volume" in df:
+            traded &= df["volume"].fillna(0) > 0
+        tol = 0.005 * df["high"].abs()
+        bad |= traded & (df["low"] > df["high"] + tol)
+        bad |= traded & ((df["close"] > df["high"] + tol) | (df["close"] < df["low"] - tol))
+        untraded = int((~traded).sum())
+        if untraded:
+            notes.append(f"{untraded} contract(s) did not trade that day (open/high/low are 0)")
+    keys = [c for c in (time_col, "symbol", "series", "instrument", "expiry", "strike", "option_type")
+            if c in df]
+    dup = df.duplicated(subset=keys, keep="last")
+    if dup.any():
+        notes.append(f"{int(dup.sum())} duplicate rows dropped")
+    return _split(df[~dup], bad[~dup], notes)
+
+
 def missing_days(df: pd.DataFrame, expected_days, time_col: str = "date") -> List[str]:
     if time_col not in df or df.empty:
         return []

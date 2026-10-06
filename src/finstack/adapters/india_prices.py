@@ -275,7 +275,7 @@ register(Pipeline(
         Source("aynse", _f_aynse, NSE_ARCHIVE_HOSTS, when=lambda r: _nse_exch(r) and _seg(r) in ("equity", "fno")),
         Source("bse", _f_bse, ("www.bseindia.com",), when=_bse_exch),
     ],
-    market="raw", needs_symbol=False, required=("symbol", "close"), check=validate.ohlcv, final=india_final,
+    market="raw", needs_symbol=False, required=("symbol", "close"), check=validate.eod_rows, final=india_final,
     columns=("date", "exchange", "segment", "symbol", "series", "isin", "instrument", "expiry", "strike",
              "option_type", "open", "high", "low", "close", "last", "prev_close", "settle", "volume", "value",
              "trades", "oi", "oi_change"),

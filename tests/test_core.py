@@ -172,3 +172,13 @@ def test_fx_pair_and_crypto_pair_parsing():
     assert crypto.pair("ETHUSDT") == ("ETH", "USDT")
     assert macro.split_id("DGS10") == ("fred", "DGS10")
     assert macro.split_id("imf:WEO:2025-10/IND.NGDP_RPCH") == ("dbn", "IMF/WEO:2025-10/IND.NGDP_RPCH")
+
+
+def test_eod_rows_accept_untraded_contracts():
+    df = pd.DataFrame({"date": pd.to_datetime(["2026-10-01"] * 3), "symbol": ["NIFTY"] * 3,
+                       "expiry": pd.to_datetime(["2026-10-27"] * 3), "strike": [20000, 21000, 22000],
+                       "option_type": ["CE", "CE", "CE"], "open": [0, 120, 50], "high": [0, 130, 40],
+                       "low": [0, 110, 45], "close": [2.5, 125, 47], "volume": [0, 10, 5]})
+    good, bad, notes = validate.eod_rows(df)
+    assert len(good) == 2 and len(bad) == 1          # untraded row kept; high < low row rejected
+    assert bad.iloc[0]["strike"] == 22000 and any("did not trade" in n for n in notes)
