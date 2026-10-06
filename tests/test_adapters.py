@@ -38,6 +38,9 @@ class FakeNSE:
     def option_chain(self, symbol, expiry_date=None):
         return load("option_chain.json")
 
+    def financial_results(self, period="quarterly", symbol=None, from_date=None, to_date=None, segment="equities"):
+        return []          # NSE's legacy index has nothing after Dec-2024
+
     def results_comparison(self, symbol):
         return load("results_comparison.json")
 
@@ -73,6 +76,15 @@ class _Resp:
 
 class _Transport:
     def request(self, url, params=None):
+        if url.endswith("/integrated-filing-results"):
+            assert params["type"] == "Integrated Filing- Financials"
+            return _Resp({"data": [
+                {"symbol": "TCS", "type": "Integrated Filing- Financials", "qe_Date": "30-Jun-2026",
+                 "consolidated": "Consolidated", "broadcast_Date": "10-Jul-2026 19:01:00",
+                 "xbrl": "https://nsearchives.nseindia.com/corporate/xbrl/TCS_Q1FY27.xml"},
+                {"symbol": "TCS", "type": "Integrated Filing- Financials", "qe_Date": "31-Mar-2026",
+                 "consolidated": "Consolidated", "broadcast_Date": "09-Apr-2026 19:00:00",
+                 "xbrl": "https://nsearchives.nseindia.com/corporate/xbrl/TCS_Q4FY26.xml"}]})
         assert url.endswith("/fiidiiTradeReact")
         return _Resp([{"category": "FII/FPI", "date": "06-Oct-2026", "buyValue": "12000.5",
                        "sellValue": "11000.25", "netValue": "1000.25"},
@@ -97,6 +109,9 @@ def fake(monkeypatch):
     n = FakeNSE()
     for mod in (india_prices, india_derivs, india_company):
         monkeypatch.setattr(mod, "nse", lambda: n)
+    import finstack.company as company
+
+    monkeypatch.setattr(company, "_nse", lambda: n)
     monkeypatch.setattr(india_prices, "bse", lambda: FakeBSE())
     monkeypatch.setattr(india_company, "bse", lambda: FakeBSE())
     monkeypatch.setattr(calendar, "india_final_through", lambda at=None: dt.date(2026, 9, 30))
@@ -180,3 +195,9 @@ def test_fii_dii_from_nse_endpoint(fake):
 def test_intraday_never_asks_indian_stock_market_for_stocks():
     assert "indian_stock_market" not in fs.route("india_intraday", "INFY")["source"].tolist()
     assert "indian_stock_market" in fs.route("india_intraday", "NIFTY")["source"].tolist()
+
+
+def test_result_filings_come_from_integrated_filing(fake):
+    df = fs.fetch("india_corporate_events", "TCS", what="result_filings")
+    assert df.iloc[0]["xbrl"].endswith("TCS_Q1FY27.xml")            # newest first
+    assert set(df["filing_system"]) == {"integrated"} and len(df) == 2

@@ -250,21 +250,63 @@ def annual_reports(symbol: str, market: str = "IN"):
     return ed.Company(symbol.upper()).get_filings(form="10-K")
 
 
+INTEGRATED_FILING = "Integrated Filing- Financials"
+
+
+def nse_result_filings(symbol: Optional[str], period: str = "quarterly", from_d=None, to_d=None) -> pd.DataFrame:
+    """Results filings from NSE, newest first, with XBRL / PDF links.
+
+    Since the March-2025 quarter, SEBI's Integrated Filing (Financials) carries quarterly results and NSE's
+    older corporates-financial-results index has nothing newer than Dec-2024. So: integrated filings first,
+    then the legacy index for older periods (or when the integrated endpoint has nothing)."""
+    n = _nse()
+    frames = []
+    params = {"index": "equities", "type": INTEGRATED_FILING}
+    if symbol:
+        params["symbol"] = symbol
+    try:
+        data = n._transport.request(f"{n.base_url}/integrated-filing-results", params=params).json()
+        rows = data if isinstance(data, list) else next(
+            (v for v in (data or {}).values() if isinstance(v, list)), [])
+        new = pd.DataFrame([r for r in rows if isinstance(r, dict)])
+        if not new.empty:
+            new = new.rename(columns={"qe_Date": "period_end", "broadcast_Date": "broadcast_date",
+                                      "revised_Date": "revised_date", "type_Sub": "filing_type"})
+            new["filing_system"] = "integrated"
+            frames.append(new)
+    except Exception:  # noqa: BLE001 - legacy index below
+        pass
+    try:
+        old = pd.DataFrame(n.financial_results(period=period, symbol=symbol, from_date=from_d, to_date=to_d))
+        if old.empty and symbol:
+            old = pd.DataFrame(n.financial_results(period=period, symbol=symbol))
+        if not old.empty:
+            old = old.rename(columns={"toDate": "period_end", "broadCastDate": "broadcast_date"})
+            old["filing_system"] = "legacy"
+            frames.append(old)
+    except Exception:  # noqa: BLE001
+        pass
+    df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    if df.empty:
+        return df
+    if symbol and "symbol" in df:
+        df = df[df["symbol"].astype(str).str.upper() == symbol.upper()]
+    when = pd.to_datetime(df.get("broadcast_date"), errors="coerce", dayfirst=True, format="mixed")
+    if from_d is not None and when.notna().any():
+        df = df[(when >= pd.Timestamp(from_d)) | when.isna()]
+        when = when[df.index]
+    return df.assign(_when=when).sort_values("_when", ascending=False).drop(columns="_when").reset_index(drop=True)
+
+
 def result_filings(symbol: Optional[str] = None, period: str = "quarterly",
                    start: Optional[str] = None, end: Optional[str] = None) -> pd.DataFrame:
-    """NSE financial-results filings with links to the result PDF and XBRL file.
+    """NSE financial-results filings with links to the result PDF and XBRL file (newest first).
     symbol=None returns every company's filings in the date range (default: last 30 days).
     period = quarterly | annual | half-yearly.
     """
     to_d = _dt.datetime.fromisoformat(end) if end else _dt.datetime.now()
     from_d = _dt.datetime.fromisoformat(start) if start else to_d - _dt.timedelta(days=30)
-    sym = _base(symbol) if symbol else None
-    df = pd.DataFrame(_nse().financial_results(period=period, symbol=sym, from_date=from_d, to_date=to_d))
-    if df.empty and sym:     # NSE often returns nothing for symbol + dates: take all filings, then filter
-        alln = pd.DataFrame(_nse().financial_results(period=period, from_date=from_d, to_date=to_d))
-        if "symbol" in alln:
-            df = alln[alln["symbol"].astype(str).str.upper() == sym]
-    return _tag(df.reset_index(drop=True), "NSE")
+    return _tag(nse_result_filings(_base(symbol) if symbol else None, period, from_d, to_d), "NSE")
 
 
 def announcements(symbol: Optional[str] = None, days: int = 30) -> pd.DataFrame:

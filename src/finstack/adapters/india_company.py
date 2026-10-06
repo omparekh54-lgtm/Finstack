@@ -309,16 +309,10 @@ def _e_nse(req):
                 df = df[df[purpose].astype(str).str.contains("result", case=False)]
         return df
     if w == "result_filings":
-        a, b = _window(req, 120, 0)
-        period = req.p("period", "quarterly")
-        df = pd.DataFrame(n.financial_results(period=period, symbol=_sym(req), from_date=a, to_date=b))
-        if df.empty and _sym(req):        # with a symbol, NSE often returns nothing for a date window
-            df = _since(pd.DataFrame(n.financial_results(period=period, symbol=_sym(req))), a)
-        if df.empty and _sym(req):        # last resort: every company's filings in the window, then filter
-            alln = pd.DataFrame(n.financial_results(period=period, from_date=a, to_date=b))
-            if "symbol" in alln:
-                df = alln[alln["symbol"].astype(str).str.upper() == _sym(req).upper()]
-        return df
+        from ..company import nse_result_filings
+
+        a, b = _window(req, 400, 0)
+        return nse_result_filings(_sym(req), req.p("period", "quarterly"), a, b)
     if w == "shareholding":
         need(_sym(req), "shareholding needs a symbol")
         return pd.DataFrame(to_records(n.shareholding(_sym(req))) or n.shareholding(_sym(req)))
