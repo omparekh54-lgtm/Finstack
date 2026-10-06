@@ -2,6 +2,7 @@
 
     python live_test.py            # everything (about 5-10 minutes the first time)
     python live_test.py india      # only the Indian data types
+    python live_test.py extra      # only the data types added in 0.8 (beta)
     python live_test.py fresh      # ignore the cache and download everything again
 
 A test passes only if data came back AND it passed a sanity check (right columns, sensible values).
@@ -117,6 +118,23 @@ TESTS = [
     ("india", "All MF NAVs (AMFI)", "india_mutual_funds", None, dict(what="latest"), at_least(5000)),
     ("india", "MF search", "india_mutual_funds", None, dict(what="search", query="parag parikh"), at_least(1)),
     ("india", "MCX gold", "india_commodities", "GOLD", dict(start="30d"), at_least(10)),
+    # ---------------- New in 0.8 (beta): python live_test.py extra
+    ("extra", "Bulk deals", "india_deals", None, dict(what="bulk", start="30d"),
+     all_of(has("date", "symbol", "quantity"), at_least(1))),
+    ("extra", "Block deals", "india_deals", None, dict(what="block", start="90d"), has("date", "symbol")),
+    ("extra", "Short selling", "india_deals", None, dict(what="short", start="30d"), has("date", "symbol")),
+    ("extra", "Delivery % (one stock)", "india_delivery", "TCS", dict(start="10d"),
+     all_of(has("delivery_pct"), between("delivery_pct", 0, 100), at_least(3))),
+    ("extra", "Option analytics", "india_options", "NIFTY", dict(what="analytics"),
+     all_of(has("max_pain", "pcr_total"), between("pcr_total", 0.05, 20))),
+    ("extra", "Index valuation", "india_index_valuation", "NIFTY 50", dict(start="1y"),
+     all_of(between("pe", 5, 60), at_least(100))),
+    ("extra", "Company ratios", "india_ratios", "TCS", {}, all_of(has("pe"), at_least(1))),
+    ("extra", "Analyst price targets", "analyst_estimates", "INFY", dict(what="price_targets"), has("mean")),
+    ("extra", "Analyst recommendations", "analyst_estimates", "INFY", dict(what="recommendations"),
+     at_least(1)),
+    ("extra", "Earnings surprises", "analyst_estimates", "AAPL", dict(what="earnings_history", market="US"),
+     at_least(1)),
     # ---------------- Global
     ("global", "US quote", "global_live_quotes", "AAPL", {}, between("last", 10, 10000)),
     ("global", "US daily prices", "global_daily_prices", "AAPL", dict(start="30d"), at_least(15)),
@@ -131,7 +149,7 @@ TESTS = [
 ]
 
 args = [a.lower() for a in sys.argv[1:]]
-group = next((a for a in args if a in ("india", "global")), None)
+group = next((a for a in args if a in ("india", "global", "extra")), None)
 fresh = "fresh" in args
 
 rows = []

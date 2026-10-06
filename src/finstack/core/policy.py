@@ -64,13 +64,14 @@ PERMITTED = {
     "apimoex": ("Moscow Exchange ISS", "public exchange API"),
     "baostock": ("Baostock", "free public API"),
     "financedatabase": ("FinanceDatabase", "open dataset (MIT)"),
+    "builtin:options_analytics": ("calculated by finstack", "computed locally from an option chain already fetched"),
 }
 
 RESTRICTED_SITES = {
     "nse": "NSE", "nsepython": "NSE", "jugaad_data": "NSE", "nselib": "NSE", "nsefin": "NSE", "aynse": "NSE",
     "nsetools": "NSE", "indian_stock_market": "NSE", "indiaopt": "NSE", "builtin:xbrl": "NSE",
     "builtin:nse_fiidii": "NSE", "builtin:nse_preopen": "NSE", "builtin:niftyindices": "NSE Indices",
-    "builtin:symbol_master": "NSE / BSE", "bse": "BSE", "bsedata": "BSE", "bseindia": "BSE",
+    "builtin:symbol_master": "NSE / BSE", "builtin:deals_all": "NSE", "bse": "BSE", "bsedata": "BSE", "bseindia": "BSE",
     "bharat_sm_data": "Moneycontrol / Tickertape / Screener", "screener": "Screener.in",
     "tvdatafeed": "TradingView", "tvkit": "TradingView", "yfinance": "Yahoo Finance",
     "yahooquery": "Yahoo Finance", "mcxlib": "MCX", "gnews": "Google News", "GoogleNews": "Google News",

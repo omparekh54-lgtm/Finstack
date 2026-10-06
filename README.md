@@ -81,6 +81,27 @@ a `source` column per row, and `df.attrs` with `source`, `attempts` (what each s
 before anything is downloaded, which source will be tried first and why others will be skipped
 (not installed, needs a key, paused after failures, website paused).
 
+### New in 0.8 (beta)
+
+Marked `beta` in `fs.pipelines()` until verified on more machines. They are separate data types: nothing
+above changed.
+
+```python
+fs.fetch("india_deals", what="bulk", start="30d")             # bulk deals (what="block" / "short")
+fs.fetch("india_deals", "TCS", what="bulk", start="1y")       # one stock (filters the cached all-stocks answer)
+fs.fetch("india_delivery", "TCS", start="3m")                 # delivery qty and delivery % per day
+fs.fetch("india_options", "NIFTY", what="analytics")          # max pain, put-call ratio, OI by strike
+fs.fetch("india_index_valuation", "NIFTY 50", start="10y")    # index P/E, P/B, dividend yield
+fs.fetch("india_ratios", "TCS")                               # P/E, P/B, ROE, ROCE, margins, debt/equity
+fs.fetch("analyst_estimates", "INFY", what="price_targets")   # also recommendations, earnings_estimate,
+                                                              # revenue_estimate, earnings_history
+fs.fetch("analyst_estimates", "AAPL", what="earnings_history", market="US")
+```
+
+Request cost: deals and delivery are one request/file for every stock (per day or window) and are kept
+for good once the day is over; option analytics re-use the option chain already fetched (no extra
+request); ratios and analyst data are cached for a day.
+
 ### How it stays fast and avoids getting blocked
 
 * **One speed limit per website, shared by every library.** Ten of the bundled libraries call

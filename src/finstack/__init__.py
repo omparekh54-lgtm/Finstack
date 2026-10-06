@@ -65,7 +65,7 @@ def net_stats():
 if _os.environ.get("FINSTACK_GOVERNOR", "1") != "0":
     governor.install()
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 __all__ = [
     # pipelines
