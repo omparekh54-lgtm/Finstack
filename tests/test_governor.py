@@ -82,11 +82,11 @@ def test_retry_after_and_rate_halving(server):
 def test_403_pauses_website_and_raises_instead_of_sleeping(server):
     import requests
 
-    config.configure(FINSTACK_MAX_WAIT=5)
+    config.configure(FINSTACK_MAX_WAIT=3)
     net.register("local", ("127.0.0.1",), rate=20.0, burst=5)
     Handler.script = [(403, {})]
     assert requests.get(server, timeout=5).status_code == 403
-    assert net.is_blocked("127.0.0.1", more_than=10)
+    assert net.is_blocked("127.0.0.1", more_than=5)       # first 403: 10 s pause
     with pytest.raises(net.WebsitePaused):
         requests.get(server, timeout=5)
     assert len(Handler.hits) == 1                 # the second request never reached the website

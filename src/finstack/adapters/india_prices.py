@@ -736,6 +736,17 @@ def _b_nse_fiidii(req):
     return pd.DataFrame(data)
 
 
+def _b_nse_preopen(req):
+    """NSE pre-open session (09:00-09:08) through the nse library's session. key: NIFTY, BANKNIFTY, FO, SME,
+    OTHERS, ALL. Outside 09:00-09:15 NSE shows the latest session's pre-open."""
+    n = nse()
+    key = str(req.p("index", "NIFTY")).upper().replace("NIFTY 50", "NIFTY").replace("NIFTY BANK", "BANKNIFTY")
+    data = n._transport.request(f"{n.base_url}/market-data-pre-open", params={"key": key}).json()
+    rows = [dict(r.get("metadata") or {}) for r in (data.get("data") or [])]
+    need(rows, "NSE returned no pre-open data")
+    return pd.DataFrame(rows)
+
+
 def _b_nselib(req):
     if _what(req) == "fii_dii":
         return get("nselib", "capital_market.capital_market_data").fii_dii_trading_activity()
@@ -748,6 +759,8 @@ register(Pipeline(
         Source("nse", _b_nse, NSE_HOSTS, when=lambda r: _what(r) in ("advance_decline", "gainers", "losers")),
         Source("builtin:nse_fiidii", _b_nse_fiidii, NSE_HOSTS, libs=("nse",), score=4.7,
                when=lambda r: _what(r) == "fii_dii"),
+        Source("builtin:nse_preopen", _b_nse_preopen, NSE_HOSTS, libs=("nse",), score=4.7,
+               when=lambda r: _what(r) == "pre_open"),
         Source("nsepython", _b_nsepython, NSE_HOSTS, when=lambda r: _what(r) in ("fii_dii", "pre_open")),
         Source("nsefin", _b_nsefin, NSE_HOSTS, when=lambda r: _what(r) in ("fii_dii", "pre_open")),
         Source("nselib", _b_nselib, NSE_HOSTS, when=lambda r: _what(r) == "fii_dii", score=3.5),

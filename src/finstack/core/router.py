@@ -229,19 +229,10 @@ def _shape(p: Pipeline, raw: Any, req: Req) -> pd.DataFrame:
 def run_sources(p: Pipeline, req: Req, only=None, exclude=(), timeout: float = 60.0,
                 attempts: Optional[list] = None) -> pd.DataFrame:
     attempts = attempts if attempts is not None else []
-    empties = tried = 0
-    steps = plan(p, req, only, exclude)
-    if steps and all(why and why.startswith("website") for _, why in steps):
-        # every source is waiting on a briefly paused website: wait (up to 90 s) rather than fail
-        wait = min(max((net.bucket(h).blocked_for() for s, _ in steps for h in s.hosts), default=0), 90)
-        if wait:
-            time.sleep(wait + 1)
-            steps = plan(p, req, only, exclude)
-    for src, why in steps:
-        if why:
-            attempts.append((src.label, f"skipped - {why}"))
-            continue
-        tried += 1
+    state = {"empties": 0, "tried": 0}
+
+    def attempt(src: Source) -> Optional[pd.DataFrame]:
+        state["tried"] += 1
         t0 = time.monotonic()
         try:
             raw = _call(src.fn, req, timeout)
@@ -264,11 +255,9 @@ def run_sources(p: Pipeline, req: Req, only=None, exclude=(), timeout: float = 6
         except schema.SchemaError as e:
             msg = str(e)
             if msg.startswith("empty") or msg == "no data":
-                empties += 1
+                state["empties"] += 1
                 health.record(src.key, p.name, True, time.monotonic() - t0, 0)
                 attempts.append((src.label, "empty"))
-                if empties >= 2:         # two independent sources agree there is nothing: stop asking
-                    raise _Empty()
             else:
                 health.record(src.key, p.name, False, time.monotonic() - t0, 0, f"schema: {msg}")
                 attempts.append((src.label, f"wrong format - {msg[:160]}"))
@@ -276,7 +265,34 @@ def run_sources(p: Pipeline, req: Req, only=None, exclude=(), timeout: float = 6
             msg = f"{type(e).__name__}: {e}"
             health.record(src.key, p.name, False, time.monotonic() - t0, 0, msg)
             attempts.append((src.label, f"failed - {msg[:200]}"))
-    if empties and empties >= min(2, tried):
+        return None
+
+    paused = []
+    for src, why in plan(p, req, only, exclude):
+        if why:
+            attempts.append((src.label, f"skipped - {why}"))
+            if why.startswith("website"):
+                paused.append(src)
+            continue
+        df = attempt(src)
+        if df is not None:
+            return df
+        if state["empties"] >= 2:          # two independent sources agree there is nothing: stop asking
+            raise _Empty()
+    if paused:
+        # Sources skipped only because their website was briefly paused (a 429/403 moments ago)
+        # get one more chance once the pause is over (waiting at most 90 s), instead of failing.
+        wait = min(max(net.bucket(h).blocked_for() for s in paused for h in s.hosts), 90)
+        time.sleep(wait + 1)
+        for src in paused:
+            why = _skip_reason(src, p.name)
+            if why:
+                attempts.append((src.label, f"skipped - {why}"))
+                continue
+            df = attempt(src)
+            if df is not None:
+                return df
+    if state["empties"] and state["empties"] >= min(2, state["tried"]):
         raise _Empty()
     raise NoData(p.name, req.describe(), attempts)
 

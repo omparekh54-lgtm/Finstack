@@ -6,7 +6,7 @@ requests, httpx, curl_cffi, urllib and aiohttp. Every request any library makes 
 website's token bucket, and every response is observed:
 
   * 429 / 503  -> wait for Retry-After (or an exponential pause) and halve that website's rate
-  * 403        -> pause the website (30 s, doubling up to 15 min) and halve its rate
+  * 403        -> pause the website (10 s, doubling up to 15 min) and halve its rate
   * successes  -> rate slowly recovers to the configured budget
 
 Nothing here hides who you are: no proxy rotation, no fake identities. It only slows down.
@@ -137,7 +137,9 @@ class Bucket:
                 self.ok_streak = 0
             elif status == 403:
                 self.n403 += 1
-                pause = min(900.0, 30.0 * 2 ** min(self.penalties, 5))
+                # first 403 pauses 10 s (often one library's missing cookie, not a real block),
+                # repeated 403s double the pause up to 15 minutes
+                pause = min(900.0, 10.0 * 2 ** min(self.penalties, 7))
                 self.blocked_until = max(self.blocked_until, now + pause)
                 self.factor = max(0.1, self.factor * 0.5)
                 self.penalties += 1

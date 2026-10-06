@@ -135,3 +135,20 @@ def to_records(obj) -> list:
                 if r:
                     return r
     return []
+
+
+def tvkit_bars(exchange_symbol: str, interval: str, start: dt.date, end: dt.date) -> pd.DataFrame:
+    """TradingView bars through tvkit (async client, run in its own event loop)."""
+    import asyncio
+
+    from tvkit import OHLCV
+
+    async def run():
+        async with OHLCV() as client:
+            return await client.get_historical_ohlcv(exchange_symbol, interval, start=start.isoformat(),
+                                                     end=end.isoformat(), segment_delay=1.0)
+
+    bars = asyncio.run(run())
+    rows = [{"ts": b.timestamp, "open": b.open, "high": b.high, "low": b.low, "close": b.close,
+             "volume": b.volume} for b in bars or []]
+    return pd.DataFrame(rows)

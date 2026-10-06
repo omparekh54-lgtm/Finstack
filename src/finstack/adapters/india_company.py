@@ -277,6 +277,18 @@ def _sym(req):
     return req.inst.nse if req.inst else None
 
 
+def _since(df: pd.DataFrame, start) -> pd.DataFrame:
+    """Keep rows dated on/after start, using the first date-like column NSE returned."""
+    if df.empty:
+        return df
+    for c in ("broadCastDate", "an_dt", "sort_date", "filingDate", "exchdisstime", "date"):
+        if c in df.columns:
+            d = pd.to_datetime(df[c], errors="coerce", dayfirst=True, format="mixed")
+            if d.notna().any():
+                return df[d >= pd.Timestamp(start)]
+    return df
+
+
 def _e_nse(req):
     n, w = nse(), _ev(req)
     if w == "actions":
@@ -284,7 +296,10 @@ def _e_nse(req):
         return pd.DataFrame(n.actions(segment="equities", symbol=_sym(req), from_date=a, to_date=b))
     if w == "announcements":
         a, b = _window(req, 30, 0)
-        return pd.DataFrame(n.announcements(symbol=_sym(req), from_date=a, to_date=b))
+        df = pd.DataFrame(n.announcements(symbol=_sym(req), from_date=a, to_date=b))
+        if df.empty and _sym(req):        # NSE sometimes ignores symbol+date filters together
+            df = _since(pd.DataFrame(n.announcements(symbol=_sym(req))), a)
+        return df
     if w in ("board_meetings", "results_calendar"):
         a, b = _window(req, 30, 90)
         df = pd.DataFrame(n.board_meetings(symbol=_sym(req), from_date=a, to_date=b))
@@ -295,8 +310,11 @@ def _e_nse(req):
         return df
     if w == "result_filings":
         a, b = _window(req, 120, 0)
-        return pd.DataFrame(n.financial_results(period=req.p("period", "quarterly"), symbol=_sym(req),
-                                                from_date=a, to_date=b))
+        period = req.p("period", "quarterly")
+        df = pd.DataFrame(n.financial_results(period=period, symbol=_sym(req), from_date=a, to_date=b))
+        if df.empty and _sym(req):        # with a symbol, NSE often returns nothing for a date window
+            df = _since(pd.DataFrame(n.financial_results(period=period, symbol=_sym(req))), a)
+        return df
     if w == "shareholding":
         need(_sym(req), "shareholding needs a symbol")
         return pd.DataFrame(to_records(n.shareholding(_sym(req))) or n.shareholding(_sym(req)))

@@ -178,6 +178,15 @@ def _m_tv(req):
     return df.drop(columns=["symbol"], errors="ignore")
 
 
+def _m_tvkit(req):
+    from ._common import tvkit_bars
+
+    sym = req.symbol.upper().replace("1!", "")
+    df = tvkit_bars(f"MCX:{sym}1!", "1D", req.start, req.end)
+    need(len(df), f"TradingView (tvkit) returned no MCX data for {sym}")
+    return df.rename(columns={"ts": "date"})
+
+
 def _mw_mcxlib(req):
     m = get("mcxlib", "market_data")
     w = req.p("what")
@@ -198,6 +207,7 @@ _MCX_SNAP = Pipeline(
 register(Pipeline(
     "india_commodities", "MCX commodity futures: daily history (continuous front month)", "series", [
         Source("mcxlib", _m_mcxlib, ("www.mcxindia.com",)),
+        Source("tvkit", _m_tvkit, TV_HOSTS, score=3.0),
         Source("tvdatafeed", _m_tv, TV_HOSTS),
     ],
     market="raw", check=validate.ohlcv, final=india_final, has_data=india_has_data, post=_post_mcx,

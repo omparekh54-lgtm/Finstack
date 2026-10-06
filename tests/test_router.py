@@ -216,3 +216,24 @@ def test_daily_files_cache_final_days(monkeypatch):
     b = fetch("t_files", start="2026-09-28", end="2026-09-30")
     assert n["calls"] == 3 and len(a) == len(b) == 6
     assert calendar.is_trading_day(dt.date(2026, 9, 28))
+
+
+def test_source_on_briefly_paused_website_is_retried_after_the_pause():
+    from finstack.core import net
+
+    calls = []
+
+    def empty_elsewhere(req):
+        calls.append("other")
+        return pd.DataFrame()
+
+    def good(req):
+        calls.append("paused")
+        return bars(req.start, req.end)
+
+    make("t_pause", [Source("builtin:paused", good, hosts=("paused.example.com",), score=5),
+                     Source("builtin:other", empty_elsewhere, score=1)])
+    b = net.bucket("paused.example.com")
+    b.blocked_until = __import__("time").monotonic() + 12        # paused > 10 s: router skips it at first
+    df = fetch("t_pause", "P", start="2025-01-01", end="2025-01-03")
+    assert calls == ["other", "paused"] and set(df["source"]) == {"builtin:paused"}
