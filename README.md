@@ -106,7 +106,20 @@ fs.fetch("company_profile", "TCS")                            # sector, industry
 fs.fetch("company_profile", "AAPL", market="US")
 fs.fetch("india_peers", "TCS")                                # peer comparison (Tickertape)
 fs.fetch("india_scorecard", "TCS")                            # Tickertape scorecard
+
+fs.fetch("india_segments", "RELIANCE")                        # segment revenue/results from the XBRL filing
+fs.fetch("india_instruments", what="etf")                     # also "sme", "sgb" (gold bonds), "circulars"
+fs.fetch("insider_trades", "TCS", start="1y")                 # NSE insider-trading disclosures
+fs.fetch("insider_trades", "AAPL", market="US")               # SEC Form 4 / Yahoo
+fs.fetch("holders", "AAPL", market="US")                      # institutional holders (what="mutual_fund", "major")
+fs.fetch("us_fund_holdings", "1067983")                       # a US fund's 13F holdings (needs EDGAR_IDENTITY)
+fs.fetch("dividends", "ITC")                                  # dividend history (what="splits" for splits)
+fs.fetch("company_news", "INFY")                              # headlines about one company
+fs.fetch("esg", "AAPL", market="US")                          # ESG risk scores (large companies)
 ```
+
+`fs.fetch("news", ...)` now keeps the publisher's name in a `publisher` column (the per-row `source`
+column says which library answered, as everywhere else).
 
 Request cost: deals and delivery are one request/file for every stock (per day or window) and are kept
 for good once the day is over; option analytics re-use the option chain already fetched (no extra

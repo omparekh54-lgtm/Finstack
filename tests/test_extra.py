@@ -297,3 +297,82 @@ def test_company_profile_india_and_global(monkeypatch):
     aapl = fs.fetch("company_profile", "AAPL", market="US", sources=["yfinance"]).iloc[0]
     assert (aapl["symbol"], aapl["employees"]) == ("AAPL", 160000)
     assert "nsepython" not in fs.route("company_profile", "AAPL", market="US")["source"].tolist()
+
+
+# ================================================================== Phase 3
+def test_india_insider_trades_from_nse(monkeypatch):
+    from finstack.adapters import global_extra
+
+    class Resp:
+        def json(self):
+            return {"data": [{"symbol": "TCS", "acqName": "Some Director", "personCategory": "Director",
+                              "secType": "Equity Shares", "secAcq": "1,000", "secVal": "38,50,000",
+                              "tdpTransactionType": "Buy", "acqfromDt": "01-Sep-2026", "acqtoDt": "01-Sep-2026",
+                              "befAcqSharesNo": "5000", "afterAcqSharesNo": "6000", "acqMode": "Market Purchase"}]}
+
+    class T:
+        def request(self, url, params=None):
+            assert url.endswith("/corporates-pit") and params["symbol"] == "TCS"
+            return Resp()
+
+    monkeypatch.setattr(global_extra, "nse", lambda: types.SimpleNamespace(base_url="https://x/api", _transport=T()))
+    r = fs.fetch("insider_trades", "TCS", sources=["builtin:nse_insider"]).iloc[0]
+    assert (r["insider"], r["transaction"], r["quantity"], r["value"]) == ("Some Director", "Buy", 1000, 3850000)
+
+
+def test_dividends_keep_exchange_dates_and_nse_amounts(monkeypatch):
+    from finstack.adapters import global_extra
+
+    class T:
+        def __init__(self, t):
+            idx = pd.DatetimeIndex(["2024-06-07", "2025-06-06"], tz="Asia/Kolkata", name="Date")
+            self.dividends = pd.Series([28.0, 30.0], index=idx)
+
+    monkeypatch.setattr(global_extra, "get", lambda key, sub="": types.SimpleNamespace(Ticker=T))
+    df = fs.fetch("dividends", "TCS", sources=["yfinance"])
+    assert list(df["date"]) == [pd.Timestamp("2024-06-07"), pd.Timestamp("2025-06-06")]
+    assert list(df["dividend"]) == [28.0, 30.0] and df["symbol"].iloc[0] == "TCS"
+    assert global_extra._DIV_AMOUNT.findall("Final Dividend - Rs 10 Per Share And Special Dividend - Rs 5") == \
+        ["10", "5"]
+
+
+def test_company_news_yahoo_new_format(monkeypatch):
+    from finstack.adapters import global_extra
+
+    class T:
+        def __init__(self, t):
+            self.news = [{"content": {"title": "Infosys wins deal", "pubDate": "2026-10-05T10:00:00Z",
+                                      "canonicalUrl": {"url": "https://example.com/a"},
+                                      "provider": {"displayName": "Reuters"}, "summary": "..."}},
+                         {"content": {"title": "Infosys wins deal", "pubDate": "2026-10-05T10:00:00Z"}}]
+
+    monkeypatch.setattr(global_extra, "get", lambda key, sub="": types.SimpleNamespace(Ticker=T))
+    df = fs.fetch("company_news", "INFY", sources=["yfinance"])
+    assert len(df) == 1 and df.iloc[0]["publisher"] == "Reuters" and df.iloc[0]["link"] == "https://example.com/a"
+
+
+def test_segments_from_xbrl(monkeypatch):
+    import finstack.company as company
+
+    facts = pd.DataFrame({
+        "element": ["SegmentRevenue", "SegmentRevenue", "SegmentResult", "RevenueFromOperations"],
+        "value": [1.2e11, 0.8e11, 3.0e10, 2.0e11], "unit": ["INR", "INR", "INR", "INR"],
+        "start": ["2026-04-01"] * 4, "end": ["2026-06-30"] * 4,
+        "dimensions": ["ifrs-full:SegmentsAxis=in-capmkt:RetailMember", "ifrs-full:SegmentsAxis=in-capmkt:DigitalMember",
+                       "ifrs-full:SegmentsAxis=in-capmkt:RetailMember", ""],
+        "context": ["c1", "c2", "c3", "c4"]})
+    monkeypatch.setattr(company, "nse_result_filings", lambda *a, **k: pd.DataFrame({"xbrl": ["https://x/a.xml"]}))
+    monkeypatch.setattr(company, "xbrl_facts", lambda src: facts)
+    df = fs.fetch("india_segments", "RELIANCE")
+    assert set(df["segment"]) == {"Retail", "Digital"} and len(df) == 3
+    assert df[df.segment == "Retail"].set_index("element").loc["SegmentRevenue", "value_cr"] == 12000.0
+
+
+def test_etf_list(monkeypatch):
+    class N:
+        def list_etf(self):
+            return {"data": [{"symbol": "NIFTYBEES", "assets": "NIFTY 50", "ltP": 280.5}]}
+
+    monkeypatch.setattr(india_extra, "nse", lambda: N())
+    df = fs.fetch("india_instruments", what="etf")
+    assert df.iloc[0]["symbol"] == "NIFTYBEES"

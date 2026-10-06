@@ -650,3 +650,70 @@ register(Pipeline(
                         label="tickertape")],
     market="IN", normalize=False, ttl=86400, status=BETA, columns=(),
     params_doc="symbol", example='fs.fetch("india_scorecard", "TCS")'))
+
+
+# =====================================================================================================
+# Phase 3: segment results, ETFs / SME / gold bonds / circulars
+# =====================================================================================================
+SEGMENT_ELEMENTS = r"Segment|segment"
+
+
+def _seg_xbrl(req):
+    from ..company import _xml_links, nse_result_filings, xbrl_facts
+
+    filings = nse_result_filings(req.inst.nse, req.p("period", "quarterly"), dtm(dt.date.today()
+                                                                                 - dt.timedelta(days=400)),
+                                 dtm(dt.date.today()))
+    links = _xml_links(filings)
+    need(links, "no XBRL results filing found")
+    facts = xbrl_facts(links[int(req.p("filing", 0))])
+    dim = facts[(facts["dimensions"] != "") & facts["value"].map(lambda v: isinstance(v, float))]
+    seg = dim[dim["element"].str.contains(SEGMENT_ELEMENTS, regex=True)]
+    need(len(seg), "this filing has no segment breakdown")
+    out = seg.assign(segment=seg["dimensions"].str.replace(r".*?:", "", regex=True).str.replace("Member", ""),
+                     value_cr=[v / 1e7 if str(u).upper().startswith("INR") else v for v, u in zip(seg["value"],
+                                                                                                 seg["unit"])])
+    return out.assign(xbrl=links[int(req.p("filing", 0))])[["start", "end", "segment", "element", "value_cr",
+                                                             "unit", "xbrl"]]
+
+
+register(Pipeline(
+    "india_segments", "Segment-wise revenue, results and assets from the company's XBRL results filing (INR crore)",
+    "snapshot", [Source("builtin:xbrl", _seg_xbrl, ("www.nseindia.com", "nsearchives.nseindia.com"),
+                        libs=("nse",), score=4.0)],
+    market="IN", normalize=False, ttl=12 * 3600, post=lambda df, r: df.assign(symbol=r.inst.nse), status=BETA,
+    columns=("start", "end", "segment", "element", "value_cr", "unit", "symbol"),
+    params_doc="symbol, filing=0 (0 = latest filing, 1 = the one before ...)",
+    example='fs.fetch("india_segments", "RELIANCE")'))
+
+
+def _inst_nse(req):
+    w = req.p("what", "etf")
+    n = nse()
+    if w == "circulars":
+        end = req.end or dt.date.today()
+        start = req.start or end - dt.timedelta(days=30)
+        return pd.DataFrame(to_records(n.circulars(from_date=dtm(start), to_date=dtm(end))))
+    name = {"etf": "list_etf", "sme": "list_sme", "sgb": "list_sgb"}.get(w)
+    need(name, "what must be etf, sme, sgb or circulars")
+    return pd.DataFrame(to_records(getattr(n, name)()))
+
+
+def _inst_bse(req):
+    need(req.p("what") == "circulars", "BSE route: circulars")
+    from ._common import bse
+
+    end = req.end or dt.date.today()
+    start = req.start or end - dt.timedelta(days=30)
+    return pd.DataFrame(to_records(bse().circulars(from_date=dtm(start), to_date=dtm(end))))
+
+
+register(Pipeline(
+    "india_instruments", "ETFs, SME stocks and sovereign gold bonds trading on NSE (live list), exchange circulars",
+    "snapshot", [
+        Source("nse", _inst_nse, NSE_HOSTS),
+        Source("bse", _inst_bse, ("api.bseindia.com",), when=lambda r: r.p("what") == "circulars"),
+    ],
+    market="raw", needs_symbol=False, normalize=False, ttl=lambda r: 60 if calendar.in_session() else 3600,
+    status=BETA, columns=(), params_doc="what=etf|sme|sgb|circulars, start/end (circulars)",
+    example='fs.fetch("india_instruments", what="etf")'))

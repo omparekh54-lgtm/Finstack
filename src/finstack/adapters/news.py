@@ -10,7 +10,7 @@ from ..core.router import Pipeline, Req, Source, register
 from ..loader import get
 from ._common import env, need
 
-NEWS_COLS = ("published", "title", "source", "link", "summary", "provider")
+NEWS_COLS = ("published", "title", "publisher", "link", "summary", "provider")
 _PUBLISHER_HOSTS = ("www.business-standard.com", "economictimes.indiatimes.com", "www.moneycontrol.com",
                     "www.livemint.com", "feeds.content.dowjones.io", "www.cnbc.com", "feeds.a.dj.com")
 
@@ -85,6 +85,8 @@ def _newsapi(req):
 
 def _post_news(df, req):
     df = df.copy()
+    if "source" in df and "publisher" not in df:      # 'source' is reserved for the library that answered
+        df = df.rename(columns={"source": "publisher"})
     df["published"] = pd.to_datetime(df["published"], errors="coerce", utc=True, format="mixed")
     key = df["title"].astype(str).str.lower().str.replace(r"[^a-z0-9]+", " ", regex=True).str.strip()
     df = df[~key.duplicated() & df["title"].notna()]
