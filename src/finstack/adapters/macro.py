@@ -183,13 +183,18 @@ def _r_treasury(req):
 def _r_fred(req):
     import requests
 
-    frames = []
-    for sid in _DGS:
+    import concurrent.futures as cf
+
+    def one(sid):
         r = requests.get("https://fred.stlouisfed.org/graph/fredgraph.csv",
                          params={"id": sid, "cosd": req.start.isoformat(), "coed": req.end.isoformat()}, timeout=30)
         r.raise_for_status()
         d = pd.read_csv(io.StringIO(r.text))
-        frames.append(d.rename(columns={d.columns[0]: "date"}).set_index("date"))
+        return d.rename(columns={d.columns[0]: "date"}).set_index("date")
+
+    # 11 small files: download 4 at a time (the governor still keeps FRED within its 2 requests/second)
+    with cf.ThreadPoolExecutor(4) as ex:
+        frames = list(ex.map(one, _DGS))
     return pd.concat(frames, axis=1).reset_index()
 
 

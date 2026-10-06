@@ -54,8 +54,12 @@ def us_yield_curve(year: Optional[int] = None) -> pd.DataFrame:
     url = ("https://home.treasury.gov/resource-center/data-chart-center/interest-rates/"
            f"daily-treasury-rates.csv/{year}/all?type=daily_treasury_yield_curve"
            f"&field_tdr_date_value={year}&page&_format=csv")
-    r = requests.get(url, timeout=_TIMEOUT)
+    r = requests.get(url, timeout=_TIMEOUT, headers={
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/126.0 Safari/537.36", "Accept": "text/csv,*/*"})
     r.raise_for_status()
+    if not r.text.lstrip().startswith("Date"):
+        raise ValueError(f"treasury.gov did not return CSV (got: {r.text.strip()[:80]!r})")
     df = pd.read_csv(io.StringIO(r.text), parse_dates=["Date"]).set_index("Date").sort_index()
     return df
 
