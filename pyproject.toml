@@ -1,15 +1,37 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "finstack"
-version = "0.7.0"
+version = "0.8.0"
 description = "One import for free financial DATA: Indian markets (NSE, BSE, MCX, F&O, IPOs, quarterly results, annual reports, Screener, Moneycontrol, Tickertape, mutual funds), global stocks, 10+ other countries, macro from IMF/ECB/OECD/World Bank, crypto, forex, filings and news."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Om Parekh" }]
+keywords = ["finance", "stock market", "nse", "bse", "india", "market data", "yfinance", "mutual funds",
+            "options", "financial data"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Financial and Insurance Industry",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Office/Business :: Financial :: Investment",
+]
 dependencies = ["pandas", "requests", "pyarrow"]   # pyarrow: Parquet cache
+
+[project.urls]
+Homepage = "https://github.com/omparekh54-lgtm/Finstack"
+Source = "https://github.com/omparekh54-lgtm/Finstack"
+Issues = "https://github.com/omparekh54-lgtm/Finstack/issues"
 
 [project.optional-dependencies]
 # ======================= INDIA =======================

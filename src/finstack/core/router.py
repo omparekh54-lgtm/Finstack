@@ -112,6 +112,8 @@ class Pipeline:
     variants: Dict[str, "Pipeline"] = field(default_factory=dict)   # chosen by the `what=` parameter
     rank_as: Optional[str] = None                                      # rankings table to order by
     live_ttl: float = 300.0          # series: don't re-download the still-changing tail more often than this
+    status: str = "stable"           # "beta" until verified live on real machines
+    symbol_filter: bool = False      # daily_files: files cover every symbol; keep only the requested one
 
 
 PIPELINES: Dict[str, Pipeline] = {}
@@ -464,6 +466,10 @@ def _daily_files(p: Pipeline, req: Req, refresh: bool, only, timeout: float) -> 
     if not frames:
         raise NoData(p.name, req.describe(), attempts)
     out = pd.concat(frames, ignore_index=True)
+    if p.symbol_filter and req.symbol and "symbol" in out:
+        out = out[out["symbol"].astype(str).str.upper() == str(req.symbol).upper()].reset_index(drop=True)
+        if out.empty:
+            raise NoData(p.name, req.describe(), attempts + [("filter", f"no rows for {req.symbol}")])
     return _tag_cached(out, attempts, issues)
 
 
@@ -601,7 +607,8 @@ def pipelines() -> pd.DataFrame:
             steps = plan(p, req, ignore_when=True, skipped_last=False)
             order = [s.label for s, _ in steps]
             ready = [s.label for s, why in steps if why is None]
-            rows.append({"type": base.name, "what": what or "", "title": p.title, "kind": p.kind,
+            rows.append({"type": base.name, "what": what or "", "status": p.status, "title": p.title,
+                         "kind": p.kind,
                          "example": p.example, "params": p.params_doc, "sources": " > ".join(order),
                          "ready_now": ", ".join(ready)})
     return pd.DataFrame(rows)

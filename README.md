@@ -5,9 +5,12 @@ One import for **free financial data**, with a focus on Indian markets. 95 data 
 ## Install
 
 ```bash
-pip install -e ".[all]"        # every data source that needs no account, key or browser
-pip install -e ".[company]"    # just company results, statements and reports (India + US)
+pip install "finstack[all]"        # every data source that needs no account, key or browser
+pip install "finstack[company]"    # just company results, statements and reports (India + US)
+pip install finstack               # just the core; add extras later, e.g. pip install "finstack[india]"
 ```
+
+From a copy of the source code, use `pip install -e ".[all]"` instead.
 
 | Extra | Data |
 |---|---|
@@ -80,6 +83,51 @@ a `source` column per row, and `df.attrs` with `source`, `attempts` (what each s
 `fs.pipelines()` lists every type with its parameters and source order. `fs.route(type, symbol)` shows,
 before anything is downloaded, which source will be tried first and why others will be skipped
 (not installed, needs a key, paused after failures, website paused).
+
+### New in 0.8 (beta)
+
+Marked `beta` in `fs.pipelines()` until verified on more machines. They are separate data types: nothing
+above changed.
+
+```python
+fs.fetch("india_deals", what="bulk", start="30d")             # bulk deals (what="block" / "short")
+fs.fetch("india_deals", "TCS", what="bulk", start="1y")       # one stock (filters the cached all-stocks answer)
+fs.fetch("india_delivery", "TCS", start="3m")                 # delivery qty and delivery % per day
+fs.fetch("india_options", "NIFTY", what="analytics")          # max pain, put-call ratio, OI by strike
+fs.fetch("india_index_valuation", "NIFTY 50", start="10y")    # index P/E, P/B, dividend yield
+fs.fetch("india_ratios", "TCS")                               # P/E, P/B, ROE, ROCE, margins, debt/equity
+fs.fetch("analyst_estimates", "INFY", what="price_targets")   # also recommendations, earnings_estimate,
+                                                              # revenue_estimate, earnings_history
+fs.fetch("analyst_estimates", "AAPL", what="earnings_history", market="US")
+
+fs.fetch("india_price_bands", "ADANIENT")                     # circuit limit (2/5/10/20 %, no band)
+fs.fetch("india_fno_reference", what="lots")                  # F&O lot sizes; what="expiries" for an index
+fs.fetch("india_fno_history", "NIFTY", expiry="2026-10-27", option_type="CE", strike=25000)  # one contract
+fs.fetch("india_market_breadth", what="volume_gainers")       # also what="most_active"
+fs.fetch("india_margins", "TCS")                              # VaR / ELM / applicable margin %
+fs.fetch("company_profile", "TCS")                            # sector, industry, ISIN, listing date ...
+fs.fetch("company_profile", "AAPL", market="US")
+fs.fetch("india_peers", "TCS")                                # peer comparison (Tickertape)
+fs.fetch("india_scorecard", "TCS")                            # Tickertape scorecard
+
+fs.fetch("india_segments", "RELIANCE")                        # segment revenue/results from the XBRL filing
+fs.fetch("india_instruments", what="etf")                     # also "sme", "sgb" (gold bonds), "circulars"
+fs.fetch("insider_trades", "INFY", start="1y")                # NSE insider-trading disclosures
+fs.fetch("insider_trades", "AAPL", market="US")               # SEC Form 4 / Yahoo
+fs.fetch("holders", "AAPL", market="US")                      # institutional holders (what="mutual_fund", "major")
+fs.fetch("us_fund_holdings", "1067983")                       # a US fund's 13F holdings (needs EDGAR_IDENTITY)
+fs.fetch("dividends", "ITC")                                  # dividend history (what="splits" for splits)
+fs.fetch("company_news", "INFY")                              # headlines about one company (Yahoo, Google News, publisher RSS)
+```
+
+ESG scores are not offered: Yahoo stopped publishing them and no other free source has them.
+
+`fs.fetch("news", ...)` now keeps the publisher's name in a `publisher` column (the per-row `source`
+column says which library answered, as everywhere else).
+
+Request cost: deals and delivery are one request/file for every stock (per day or window) and are kept
+for good once the day is over; option analytics re-use the option chain already fetched (no extra
+request); ratios and analyst data are cached for a day.
 
 ### How it stays fast and avoids getting blocked
 

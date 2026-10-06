@@ -2,6 +2,7 @@
 
     python live_test.py            # everything (about 5-10 minutes the first time)
     python live_test.py india      # only the Indian data types
+    python live_test.py extra      # only the data types added in 0.8 (beta)
     python live_test.py fresh      # ignore the cache and download everything again
 
 A test passes only if data came back AND it passed a sanity check (right columns, sensible values).
@@ -117,6 +118,43 @@ TESTS = [
     ("india", "All MF NAVs (AMFI)", "india_mutual_funds", None, dict(what="latest"), at_least(5000)),
     ("india", "MF search", "india_mutual_funds", None, dict(what="search", query="parag parikh"), at_least(1)),
     ("india", "MCX gold", "india_commodities", "GOLD", dict(start="30d"), at_least(10)),
+    # ---------------- New in 0.8 (beta): python live_test.py extra
+    ("extra", "Bulk deals", "india_deals", None, dict(what="bulk", start="30d"),
+     all_of(has("date", "symbol", "quantity"), at_least(1))),
+    ("extra", "Block deals", "india_deals", None, dict(what="block", start="90d"), has("date", "symbol")),
+    ("extra", "Short selling", "india_deals", None, dict(what="short", start="30d"), has("date", "symbol")),
+    ("extra", "Delivery % (one stock)", "india_delivery", "TCS", dict(start="10d"),
+     all_of(has("delivery_pct"), between("delivery_pct", 0, 100), at_least(3))),
+    ("extra", "Option analytics", "india_options", "NIFTY", dict(what="analytics"),
+     all_of(has("max_pain", "pcr_total"), between("pcr_total", 0.05, 20))),
+    ("extra", "Index valuation", "india_index_valuation", "NIFTY 50", dict(start="1y"),
+     all_of(between("pe", 5, 60), at_least(100))),
+    ("extra", "Company ratios", "india_ratios", "TCS", {}, all_of(has("pe"), at_least(1))),
+    ("extra", "Analyst price targets", "analyst_estimates", "INFY", dict(what="price_targets"), has("mean")),
+    ("extra", "Analyst recommendations", "analyst_estimates", "INFY", dict(what="recommendations"),
+     at_least(1)),
+    ("extra", "Earnings surprises", "analyst_estimates", "AAPL", dict(what="earnings_history", market="US"),
+     at_least(1)),
+    ("extra", "Price bands", "india_price_bands", None, dict(start="7d"), all_of(has("symbol", "band"), at_least(1000))),
+    ("extra", "F&O lot sizes", "india_fno_reference", None, dict(what="lots"), at_least(50)),
+    ("extra", "Futures expiries", "india_fno_reference", "NIFTY", dict(what="expiries"), at_least(1)),
+    ("extra", "F&O contract history", "FNO", "NIFTY", dict(start="20d"), all_of(has("oi", "settle"), at_least(5))),
+    ("extra", "Volume gainers", "india_market_breadth", None, dict(what="volume_gainers"), at_least(1)),
+    ("extra", "Most active", "india_market_breadth", None, dict(what="most_active"), at_least(1)),
+    ("extra", "Margins (VaR/ELM)", "india_margins", "TCS", dict(start="7d"), at_least(1)),
+    ("extra", "Company profile (India)", "company_profile", "TCS", {}, has("name")),
+    ("extra", "Company profile (US)", "company_profile", "AAPL", dict(market="US"), has("name", "sector")),
+    ("extra", "Peers", "india_peers", "TCS", {}, at_least(2)),
+    ("extra", "Tickertape scorecard", "india_scorecard", "TCS", {}, at_least(1)),
+    ("extra", "Segments (XBRL)", "india_segments", "RELIANCE", {}, all_of(has("segment", "value_cr"), at_least(2))),
+    ("extra", "ETF list", "india_instruments", None, dict(what="etf"), at_least(20)),
+    ("extra", "Gold bonds list", "india_instruments", None, dict(what="sgb"), at_least(1)),
+    ("extra", "Exchange circulars", "india_instruments", None, dict(what="circulars"), at_least(1)),
+    ("extra", "Insider trades (India)", "insider_trades", "INFY", dict(start="1y"), at_least(1)),
+    ("extra", "Insider trades (US)", "insider_trades", "AAPL", dict(market="US"), at_least(1)),
+    ("extra", "Holders (US)", "holders", "AAPL", dict(market="US"), at_least(3)),
+    ("extra", "Dividend history", "dividends", "ITC", {}, all_of(has("date", "dividend"), at_least(5))),
+    ("extra", "Company news", "company_news", "INFY", {}, all_of(has("title"), at_least(1))),
     # ---------------- Global
     ("global", "US quote", "global_live_quotes", "AAPL", {}, between("last", 10, 10000)),
     ("global", "US daily prices", "global_daily_prices", "AAPL", dict(start="30d"), at_least(15)),
@@ -131,7 +169,7 @@ TESTS = [
 ]
 
 args = [a.lower() for a in sys.argv[1:]]
-group = next((a for a in args if a in ("india", "global")), None)
+group = next((a for a in args if a in ("india", "global", "extra")), None)
 fresh = "fresh" in args
 
 rows = []
@@ -141,12 +179,15 @@ for grp, label, dtype, sym, kw, check in TESTS:
     t0 = time.time()
     err, df = None, None
     try:
-        if dtype == "BULK":
+        if dtype == "FNO":         # history of the nearest NIFTY futures contract
+            exp = fs.fetch("india_fno_reference", "NIFTY", what="expiries")["expiry"].min()
+            df = fs.fetch("india_fno_history", sym, expiry=str(exp.date()), refresh=fresh, timeout=30, **kw)
+        elif dtype == "BULK":
             syms = fs.fetch("india_indices", "NIFTY 50", what="constituents")["symbol"].head(10).tolist()
             df = fs.bulk("india_daily_prices", syms, refresh=fresh, progress=False, **kw)
             if df.attrs.get("failed"):
                 raise RuntimeError(f"failed symbols: {df.attrs['failed']}")
-        else:
+        if dtype not in ("FNO", "BULK"):
             df = fs.fetch(dtype, sym, timeout=30, refresh=fresh, **kw)
         verdict = check(df)
         if verdict is True:

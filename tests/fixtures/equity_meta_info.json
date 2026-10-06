@@ -1,0 +1,25 @@
+{
+  "symbol": "HDFCBANK",
+  "activeSeries": [
+    "EQ",
+    "T0"
+  ],
+  "companyName": "HDFC Bank Limited",
+  "debtSeries": [],
+  "isFNOSec": "true",
+  "isCASec": "false",
+  "isSLBSec": "true",
+  "isDebtSec": "true",
+  "tempSuspendedSeries": [
+    "IL",
+    "W3"
+  ],
+  "isSuspended": "false",
+  "isETFSec": "false",
+  "isDelisted": "false",
+  "isin": "INE040A01034",
+  "isMunicipalBond": "false",
+  "isHybridSymbol": "false",
+  "marketType": "N",
+  "parentSymbol": "HDFCBANK"
+}

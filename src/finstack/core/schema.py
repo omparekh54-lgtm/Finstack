@@ -24,7 +24,7 @@ def canon(name) -> str:
 
 ALIASES: Dict[str, List[str]] = {
     # time
-    "date": ["date", "ch_timestamp", "mtimestamp", "eod_timestamp", "traddt", "trade_date", "trading_date",
+    "date": ["date", "ch_timestamp", "date1", "fh_timestamp", "bd_dt_date", "mtimestamp", "eod_timestamp", "traddt", "trade_date", "trading_date",
              "timestamp", "datetime", "index", "time", "dt", "nav_date"],
     "ts": ["ts", "datetime", "timestamp", "time", "date"],
     # prices
@@ -42,16 +42,16 @@ ALIASES: Dict[str, List[str]] = {
     "prev_close": ["prev_close", "prevclose_", "ch_previous_cls_price", "prvsclsgpric", "prevclose", "previous_close",
                    "previousclose", "prev_close_price", "eod_prev_close", "prevdayclose"],
     "vwap": ["vwap", "average_price", "avg_price", "averageprice", "average_traded_price"],
-    "volume": ["volume", "totaltradedquantity", "ch_tot_traded_qty", "ttltradgvol", "tottrdqty", "total_traded_quantity",
+    "volume": ["volume", "totaltradedquantity", "ttl_trd_qnty", "fh_tot_traded_qty", "ch_tot_traded_qty", "ttltradgvol", "tottrdqty", "total_traded_quantity",
                "hit_traded_qty", "totaltradedvolume", "no_of_shares", "trd_vol", "qty", "v",
                "tot_trd_qty", "total_traded_qty"],
     "value": ["value", "turnoverinrs", "ch_tot_traded_val", "ttltrfval", "tottrdval", "turnover", "hit_turn_over",
               "totaltradedvalue", "trd_val", "total_traded_value", "turnover_lacs", "turnover_in_lacs"],
     "trades": ["trades", "no_oftrades", "ch_total_trades", "ttlnboftxsexctd", "totaltrades", "no_of_trades", "nooftrd",
                "number_of_trades"],
-    "delivery_qty": ["delivery_qty", "deliverableqty_", "deliverable_qty", "dly_qt", "deliverableqty", "delivery_quantity",
+    "delivery_qty": ["delivery_qty", "deliv_qty", "deliverableqty_", "deliverable_qty", "dly_qt", "deliverableqty", "delivery_quantity",
                      "deliverable_quantity"],
-    "delivery_pct": ["delivery_pct", "pct_dlyqttotradedqty_", "pct_dly_qt_to_traded_qty", "pct_dlyqttotradedqty", "deliverable_pct",
+    "delivery_pct": ["delivery_pct", "deliv_per", "pct_dlyqttotradedqty_", "pct_dly_qt_to_traded_qty", "pct_dlyqttotradedqty", "deliverable_pct",
                      "pct_deliverble", "pct_deliverable", "delivery_percentage", "dly_qt_to_traded_qty"],
     # identity
     "symbol": ["symbol", "ch_symbol", "tckrsymb", "tcksymb", "tradingsymbol", "ticker", "sc_name", "scripname"],

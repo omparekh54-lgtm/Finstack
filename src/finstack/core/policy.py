@@ -64,16 +64,18 @@ PERMITTED = {
     "apimoex": ("Moscow Exchange ISS", "public exchange API"),
     "baostock": ("Baostock", "free public API"),
     "financedatabase": ("FinanceDatabase", "open dataset (MIT)"),
+    "builtin:options_analytics": ("calculated by finstack", "computed locally from an option chain already fetched"),
 }
 
 RESTRICTED_SITES = {
     "nse": "NSE", "nsepython": "NSE", "jugaad_data": "NSE", "nselib": "NSE", "nsefin": "NSE", "aynse": "NSE",
     "nsetools": "NSE", "indian_stock_market": "NSE", "indiaopt": "NSE", "builtin:xbrl": "NSE",
     "builtin:nse_fiidii": "NSE", "builtin:nse_preopen": "NSE", "builtin:niftyindices": "NSE Indices",
-    "builtin:symbol_master": "NSE / BSE", "bse": "BSE", "bsedata": "BSE", "bseindia": "BSE",
+    "builtin:symbol_master": "NSE / BSE", "builtin:deals_all": "NSE", "builtin:nse_insider": "NSE", "bse": "BSE", "bsedata": "BSE", "bseindia": "BSE",
     "bharat_sm_data": "Moneycontrol / Tickertape / Screener", "screener": "Screener.in",
     "tvdatafeed": "TradingView", "tvkit": "TradingView", "yfinance": "Yahoo Finance",
-    "yahooquery": "Yahoo Finance", "mcxlib": "MCX", "gnews": "Google News", "GoogleNews": "Google News",
+    "yahooquery": "Yahoo Finance", "yfinance:search": "Yahoo Finance",
+    "builtin:google_news_rss": "Google News", "mcxlib": "MCX", "gnews": "Google News", "GoogleNews": "Google News",
     "trendspy": "Google Trends", "finvizfinance": "Finviz", "cryptocmd": "CoinMarketCap",
     "akshare": "Eastmoney / Sina", "efinance": "Eastmoney", "pykrx": "KRX", "twstock": "TWSE",
     "finance_datareader": "various websites", "openbb": "OpenBB providers (Yahoo by default)",
