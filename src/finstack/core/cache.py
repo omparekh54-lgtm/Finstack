@@ -21,6 +21,7 @@ import hashlib
 import json
 import pickle
 import re
+import atexit
 import sqlite3
 import threading
 import time
@@ -40,6 +41,20 @@ def root() -> Path:
     p = config.home() / "cache"
     p.mkdir(parents=True, exist_ok=True)
     return p
+
+
+def close() -> None:
+    """Close the database connection (called automatically when Python exits)."""
+    global _db
+    if _db is not None:
+        try:
+            _db.close()
+        except sqlite3.Error:
+            pass
+        _db = None
+
+
+atexit.register(close)
 
 
 def _conn() -> sqlite3.Connection:

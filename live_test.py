@@ -44,18 +44,23 @@ TESTS = [
 ]
 
 rows = []
+err = None
 for label, dtype, sym, kw in TESTS:
     t0 = time.time()
     try:
         df = fs.fetch(dtype, sym, timeout=30, **kw)
         status, src, n, note = "OK", df.attrs.get("source", ""), len(df), "; ".join(df.attrs.get("issues", []))[:120]
     except Exception as e:  # noqa: BLE001
+        err = e
         status, src, n = "FAIL", "", 0
         note = " | ".join(f"{s}: {o}" for s, o in getattr(e, "attempts", [])[:4])[:300] or str(e)[:300]
     secs = round(time.time() - t0, 1)
     rows.append({"test": label, "type": dtype, "status": status, "rows": n, "source": src, "seconds": secs,
                  "details": note})
     print(f"{status:4}  {label:24} rows={n:<6} {secs:>5}s  {src}")
+    if status == "FAIL":                       # show why each source failed, right here
+        for s, o in getattr(err, "attempts", []) or []:
+            print(f"        - {s}: {o[:160]}")
 
 report = pd.DataFrame(rows)
 report.to_csv("live_test_report.csv", index=False)

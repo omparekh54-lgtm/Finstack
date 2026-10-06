@@ -166,7 +166,16 @@ def _post_mcx(df, req):
 
 
 def _m_tv(req):
-    return tv_bars(f"{req.symbol.upper().replace('1!', '')}1!", "MCX", "1d", bars_since(req.start))
+    """TradingView continuous front-month future (fut_contract=1), e.g. MCX GOLD."""
+    from tvDatafeed import Interval
+
+    from ..india import tradingview
+
+    sym = req.symbol.upper().replace("1!", "")
+    df = tradingview().get_hist(symbol=sym, exchange="MCX", interval=Interval.in_daily,
+                                n_bars=min(bars_since(req.start), 5000), fut_contract=1)
+    need(df is not None and len(df), f"TradingView returned no MCX data for {sym}")
+    return df.drop(columns=["symbol"], errors="ignore")
 
 
 def _mw_mcxlib(req):

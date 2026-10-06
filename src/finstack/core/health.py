@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import atexit
 import sqlite3
 import threading
 import time
@@ -30,6 +31,20 @@ class _Breaker:
 _lock = threading.Lock()
 _breakers: Dict[str, _Breaker] = {}
 _db: Optional[sqlite3.Connection] = None
+
+
+def close() -> None:
+    """Close the database connection (called automatically when Python exits)."""
+    global _db
+    if _db is not None:
+        try:
+            _db.close()
+        except sqlite3.Error:
+            pass
+        _db = None
+
+
+atexit.register(close)
 
 
 def _conn() -> sqlite3.Connection:
