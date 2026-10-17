@@ -28,6 +28,7 @@ from .loader import catalog, doctor, get, is_installed
 from .more import (dbnomics, ecb, eurostat, gdelt, google_news, imf_weo, mcx, sdmx_client,
                    trends, us_yield_curve, world_history)
 from .rankings import data_types, sources
+from .reference_plus import nse_shareholding_history, nse_surveillance
 from .registry import CATALOG, CATEGORIES, lookup
 
 # ------------------------------------------------------------------ pipelines
@@ -83,6 +84,7 @@ __all__ = [
     # india market data
     "nse_client", "nse_history", "nse_quote", "bse_quote", "bhavcopy", "tv_history", "tradingview",
     "option_chain", "fii_dii", "ipos", "index_constituents", "mcx", "mf_nav", "mf_search",
+    "nse_shareholding_history", "nse_surveillance",
     # global markets
     "history", "quote", "symbols", "world_history", "crypto_price", "filings",
     # macro, rates, fx
