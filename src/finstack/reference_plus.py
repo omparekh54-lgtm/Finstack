@@ -16,7 +16,8 @@ _INDEX_HISTORY_URL = (
     "https://raw.githubusercontent.com/aditya-jha/nse-historical-membership/"
     "main/index_history/data/index_membership_history.csv"
 )
-_NSE_SURVEILLANCE_URL = "https://nsearchives.nseindia.com/archives/equities/mkt/{kind}{ddmmyy}.csv"
+# Official consolidated daily surveillance indicator file introduced in 2024.
+_NSE_SURVEILLANCE_URL = "https://nsearchives.nseindia.com/content/cm/{kind}{ddmmyy}.csv"
 _NSE_HOME = "https://www.nseindia.com"
 _NSE_SURVEILLANCE_LANDING = "https://www.nseindia.com/regulations/exchange-market-surveillance-actions"
 _HEADERS = {
@@ -94,10 +95,7 @@ def _json_rows(payload):
 
 def _parse_current_surveillance(asm, gsm, as_of: date) -> pd.DataFrame:
     rows: list[dict] = []
-    if isinstance(asm, dict):
-        buckets = asm.items()
-    else:
-        buckets = [("", asm)]
+    buckets = asm.items() if isinstance(asm, dict) else [("", asm)]
     for bucket, payload in buckets:
         for row in _json_rows(payload):
             symbol = str(row.get("symbol") or row.get("Symbol") or "").upper().strip()
@@ -115,14 +113,12 @@ def _parse_current_surveillance(asm, gsm, as_of: date) -> pd.DataFrame:
             continue
         desc = str(row.get("survDesc") or "")
         code = str(row.get("survCode") or "")
-        # gsmStage is an internal sequence code; actual 0-6 stage is in description/code.
         m = re.search(r"GSM\s*stage\s*(\d+)", desc, re.I) or re.search(r"GSM\s*(\d+)", code, re.I)
         stage = m.group(1) if m else (_roman_or_arabic(row.get("stage") or row.get("category")) or "1")
-        rows.append({"symbol": symbol, "surveillance_type": "GSM", "stage": stage,
+        rows.append({"symbol": symbol, "surveillance_type": "GSM", "stage": f"GSM{stage}",
                      "effective_date": pd.Timestamp(as_of), "source": "NSE_REPORT_GSM"})
     if not rows:
         return pd.DataFrame(columns=["symbol", "surveillance_type", "stage", "effective_date", "source"])
-    # GSM and ASM are retained as distinct hard-filter facts; duplicate source rows collapse.
     return pd.DataFrame(rows).drop_duplicates(["symbol", "surveillance_type", "stage", "effective_date"]).reset_index(drop=True)
 
 
@@ -131,7 +127,6 @@ def nse_current_surveillance(as_of: str | date | None = None) -> pd.DataFrame:
     d = pd.Timestamp(as_of or date.today()).date()
     session = requests.Session()
     session.headers.update(_HEADERS)
-    # Cookie warm-up. Failure is tolerated because endpoints occasionally work without it.
     try:
         session.get(_NSE_SURVEILLANCE_LANDING, timeout=_TIMEOUT)
     except requests.RequestException:
@@ -144,60 +139,50 @@ def nse_current_surveillance(as_of: str | date | None = None) -> pd.DataFrame:
     return _parse_current_surveillance(responses[0], responses[1], d)
 
 
-def _truthy_surveillance(value) -> bool:
+def _indicator_active(value) -> bool:
+    """NSE REG_IND semantics: 100 means not applicable; GSM 0 is active."""
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return False
-    s = str(value).strip().upper()
-    return s not in {"", "0", "N", "NO", "NA", "N/A", "NONE", "FALSE", "-", "NAN"}
+    text = str(value).strip().upper()
+    return text not in {"", "100", "NA", "N/A", "NONE", "NAN", "-"}
 
 
-def _symbol_column(df: pd.DataFrame) -> str:
-    normalized = {str(c).upper().replace(" ", "").replace("_", ""): str(c) for c in df.columns}
-    for key in ("SYMBOL", "SMSYMBOL", "NSESYMBOL", "TRADINGSYMBOL", "SCRIPCODE"):
-        if key in normalized:
-            return normalized[key]
-    for c in df.columns:
-        if "SYMBOL" in str(c).upper():
-            return str(c)
-    raise ValueError(f"cannot identify symbol column in REG_IND columns: {list(df.columns)[:25]}")
-
-
-def _extract_surveillance(df: pd.DataFrame, as_of: date, source: str) -> list[dict]:
-    if df is None or df.empty:
+def _modern_reg_ind_rows(df: pd.DataFrame, as_of: date, source: str) -> list[dict]:
+    normalized = {re.sub(r"[^A-Z0-9]", "", str(c).upper()): c for c in df.columns}
+    symbol_col = normalized.get("SYMBOL")
+    gsm_col = normalized.get("GSM")
+    lt_col = next((c for k, c in normalized.items() if "LONGTERM" in k and "SURVEILLANCE" in k), None)
+    st_col = next((c for k, c in normalized.items() if "SHORTTERM" in k and "SURVEILLANCE" in k), None)
+    if not symbol_col or not gsm_col or (not lt_col and not st_col):
         return []
-    symbol_col = _symbol_column(df)
     rows: list[dict] = []
     for _, row in df.iterrows():
-        symbol = str(row.get(symbol_col, "")).upper().strip()
+        symbol = str(row.get(symbol_col) or "").upper().strip()
         if not symbol or symbol in {"NAN", "NONE"}:
             continue
-        for measure in ("ASM", "GSM"):
-            stage = None
-            active = False
-            for col in df.columns:
-                c = str(col).upper()
-                val = row.get(col)
-                if measure in c and _truthy_surveillance(val):
-                    active = True
-                    text = f"{c} {val}".upper()
-                    m = re.search(r"STAGE\s*[-:]?\s*([IVXLCDM]+|\d+)", text)
-                    stage = _roman_or_arabic(m.group(1)) if m else stage
-                elif _truthy_surveillance(val) and measure in str(val).upper():
-                    active = True
-                    text = str(val).upper()
-                    m = re.search(r"STAGE\s*[-:]?\s*([IVXLCDM]+|\d+)", text)
-                    stage = _roman_or_arabic(m.group(1)) if m else stage
-            if active:
-                rows.append({"symbol": symbol, "surveillance_type": measure, "stage": stage,
-                             "effective_date": pd.Timestamp(as_of), "source": source})
+        gsm = row.get(gsm_col)
+        lt = row.get(lt_col) if lt_col else None
+        st = row.get(st_col) if st_col else None
+        if _indicator_active(gsm):
+            rows.append({"symbol": symbol, "surveillance_type": "GSM", "stage": f"GSM{str(gsm).strip()}",
+                         "effective_date": pd.Timestamp(as_of), "source": source})
+        asm_parts: list[str] = []
+        if _indicator_active(lt):
+            asm_parts.append(f"LT{str(lt).strip()}")
+        if _indicator_active(st):
+            asm_parts.append(f"ST{str(st).strip()}")
+        if asm_parts:
+            rows.append({"symbol": symbol, "surveillance_type": "ASM", "stage": "+".join(asm_parts),
+                         "effective_date": pd.Timestamp(as_of), "source": source})
     return rows
 
 
 def nse_surveillance(as_of: str | date | None = None) -> pd.DataFrame:
-    """Historical consolidated surveillance flags from NSE REG_IND/REG1_IND daily archives.
+    """Official NSE ASM/GSM state for a date.
 
-    For the current date, the JSON ASM/GSM endpoints are attempted first because they preserve
-    tenure/stage fields more cleanly. Archive files remain the point-in-time backfill source.
+    Current dates use the official reportASM/reportGSM JSON endpoints when possible.
+    Historical standardized data use NSE's REG_IND daily archive. The archive uses 100
+    for 'not applicable'; importantly GSM value 0 is still an active GSM state.
     """
     d = pd.Timestamp(as_of or date.today()).date()
     if d == date.today():
@@ -218,7 +203,8 @@ def nse_surveillance(as_of: str | date | None = None) -> pd.DataFrame:
                 continue
             r.raise_for_status()
             df = pd.read_csv(BytesIO(r.content), low_memory=False)
-            out.extend(_extract_surveillance(df, d, f"NSE_{kind}"))
+            parsed = _modern_reg_ind_rows(df, d, f"NSE_{kind}")
+            out.extend(parsed)
         except (requests.RequestException, ValueError, pd.errors.ParserError):
             continue
     if not out:
